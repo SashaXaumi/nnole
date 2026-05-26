@@ -7,9 +7,8 @@ declare namespace Cloudflare {
 	}
 	interface Env {
 		VALUE_FROM_CLOUDFLARE: "Hello from Cloudflare";
-		// D1 binding is attached via Cloudflare dashboard (not in wrangler.json)
-		// because we want to keep the real database ID out of the public repo.
-		DB_VAR: D1Database;
+		// D1 was removed in the "we don't actually need a database" update.
+		// The site now runs with zero external dependencies besides the Workers runtime.
 	}
 }
 interface Env extends Cloudflare.Env {}

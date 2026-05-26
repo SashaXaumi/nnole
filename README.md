@@ -34,10 +34,11 @@ Instead, the site just generates random 5-letter combinations and presents them 
 
 ## Tech Stack
 
-- [React Router 7](https://reactrouter.com/) (full-stack)
+- [React Router 7](https://reactrouter.com/)
 - Cloudflare Workers
-- D1 (SQLite at the edge)
 - Tailwind CSS
+
+Zero external databases. The "accidentally useful" domain suggestions are generated in the browser.
 
 ## Getting Started
 
@@ -57,45 +58,12 @@ npm run dev
 
 Your local version will be available at `http://localhost:5173`.
 
-### Setting up the Database
-
-This project uses Cloudflare D1.
-
-1. Create the D1 database (only needed once):
-
-```bash
-npx wrangler d1 create nnole-domains
-```
-
-2. **Attach the D1 database to your Worker via the dashboard** (this is how the binding is configured without putting the ID in the repo):
-
-   - Go to your Worker in the [Cloudflare dashboard](https://dash.cloudflare.com)
-   - **Settings → Bindings → + Add binding → D1 Database**
-   - Variable name: `DB`
-   - Select your `nnole-domains` database
-
-   > **Note:** The `DB_VAR` secret you added is not used for the D1 binding. D1 connections are configured under **Bindings**, not under Variables/Secrets.
-
-3. Apply the migrations:
-
-```bash
-npx wrangler d1 migrations apply nnole-domains --remote   # for production
-npx wrangler d1 migrations apply nnole-domains --local    # for local dev
-```
-
 ## Deployment
 
 Because this repository is connected directly to Cloudflare for automatic deployments, **every push to `main` will trigger a production deploy**.
 
 ### Important
-Before pushing any changes that touch the database layer, make sure the D1 binding is attached in the dashboard (see "Setting up the Database" above). Since `d1_databases` is no longer declared in `wrangler.json`, the binding must come from the Worker settings in the Cloudflare dashboard.
-
-To apply migrations or do manual deploys locally:
-
-```bash
-npx wrangler d1 migrations apply nnole-domains --remote
-npm run build && npx wrangler deploy
-```
+No databases or special bindings are required. Just push to `main` (or run `npm run deploy` locally after building). The site runs with zero external services beyond the Workers runtime.
 
 ## License
 

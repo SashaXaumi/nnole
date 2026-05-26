@@ -6,10 +6,8 @@ import {
 	useRef,
 	useState,
 } from "react";
-import {
-	forceNewDomainSuggestions,
-	getFiveDomainSuggestions,
-} from "../lib/domains.server";
+// Note: Domain suggestions are now purely client-side (no DB, no server).
+// The "accidentally useful" bit is now actually accidental and local.
 
 export function meta({}: Route.MetaArgs) {
 	return [
@@ -22,72 +20,26 @@ export function meta({}: Route.MetaArgs) {
 	];
 }
 
-const REFRESH_COOKIE = "nnole_last_refresh";
+// Note: No more D1 database. Domain suggestions are generated in the browser.
+// Contact messages are sent into the actual void (we just pretend it worked).
 
-function parseCookie(cookieHeader: string | null, name: string): string | null {
-	if (!cookieHeader) return null;
-	const match = cookieHeader.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
-	return match ? decodeURIComponent(match[1]) : null;
+export async function loader() {
+	return { now: Date.now() };
 }
 
-export async function loader({ context, request }: Route.LoaderArgs) {
-	const db = context.cloudflare.env.DB_VAR;
-	const domains = await getFiveDomainSuggestions(db);
-	const cookie = request.headers.get("Cookie");
-	const lastRefreshStr = parseCookie(cookie, REFRESH_COOKIE);
-	const lastRefresh = lastRefreshStr ? parseInt(lastRefreshStr, 10) : 0;
-	return { domains, lastRefresh, now: Date.now() };
-}
-
-export async function action({ context, request }: Route.ActionArgs) {
-	const db = context.cloudflare.env.DB_VAR;
+export async function action({ request }: Route.ActionArgs) {
 	const formData = await request.formData();
 	const intent = formData.get("intent");
 
-	if (intent === "refresh-domains") {
-		const cookie = request.headers.get("Cookie");
-		const lastStr = parseCookie(cookie, REFRESH_COOKIE);
-		const last = lastStr ? parseInt(lastStr, 10) : 0;
-		const fiveMinutes = 1000 * 60 * 5;
-		const now = Date.now();
-
-		if (last && now - last < fiveMinutes) {
-			return Response.json(
-				{
-					error: "cooldown",
-					message:
-						"Look. I went through the effort of generating these. The least you can do is pretend to consider one for a second.",
-				},
-				{ status: 429 },
-			);
-		}
-
-		const newDomains = await forceNewDomainSuggestions(db);
-		const headers = new Headers();
-		headers.append(
-			"Set-Cookie",
-			`${REFRESH_COOKIE}=${now}; Path=/; Max-Age=${60 * 5}; SameSite=Lax`,
-		);
-		return Response.json({ domains: newDomains }, { headers });
-	}
-
-	// Working contact form → stored in the void (D1)
+	// Contact form — we still accept submissions, we just don't keep them.
 	if (intent === "contact") {
-		const name = (formData.get("name") as string) || null;
-		const email = (formData.get("email") as string) || null;
 		const body = formData.get("body") as string;
 
 		if (!body?.trim()) {
 			return Response.json({ error: "empty" }, { status: 400 });
 		}
 
-		await db
-			.prepare(
-				"INSERT INTO messages (name, email, body, created_at) VALUES (?, ?, ?, ?)"
-			)
-			.bind(name, email, body.trim(), Date.now())
-			.run();
-
+		// We read it. We nod solemnly. Then we let it go.
 		return Response.json({ success: true });
 	}
 
@@ -97,14 +49,8 @@ export async function action({ context, request }: Route.ActionArgs) {
 const ACCENT_OPTIONS = ["#c64a2e", "#2f6f5b", "#3b4cca", "#b88914", "#0a0a0a"];
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-	const { domains: initialDomains } = loaderData;
-	const fetcher = useFetcher();
-	const domains: string[] = (fetcher.data as any)?.domains ?? initialDomains;
-	const isRefreshing = fetcher.state === "submitting";
-	const cooldownError =
-		(fetcher.data as any)?.error === "cooldown"
-			? (fetcher.data as any).message
-			: null;
+	// Domains are now generated client-side inside AccidentallyUseful.
+	// No more server fetcher for that joke.
 
 	const [theme, setTheme] = useState<"light" | "dark">("light");
 	const [accent, setAccent] = useState<string>(ACCENT_OPTIONS[0]);
@@ -161,14 +107,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 				onCheckout={() => setCheckoutOpen(true)}
 				isMobile={isMobile}
 			/>
-			<AccidentallyUseful
-				accent={accent}
-				domains={domains}
-				isRefreshing={isRefreshing}
-				cooldownError={cooldownError}
-				fetcher={fetcher}
-				isMobile={isMobile}
-			/>
+			<AccidentallyUseful accent={accent} isMobile={isMobile} />
 			<About accent={accent} isMobile={isMobile} />
 			<Reviews accent={accent} isMobile={isMobile} />
 			<SearchVoid accent={accent} isMobile={isMobile} />
@@ -992,23 +931,68 @@ function Placeholder({
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// ACCIDENTALLY USEFUL — the domain-finder, reframed as our great shame
+// ACCIDENTALLY USEFUL — now 100% client-side (no DB, no server)
 // ─────────────────────────────────────────────────────────────────────
+
+function generateRandomFiveLetterDomain(): string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz";
+	let result = "";
+	for (let i = 0; i < 5; i++) {
+		result += alphabet[Math.floor(Math.random() * alphabet.length)];
+	}
+	return result;
+}
+
+function getFiveFreshSuggestions(exclude: Set<string> = new Set()): string[] {
+	const suggestions = new Set<string>();
+	let attempts = 0;
+	while (suggestions.size < 5 && attempts < 100) {
+		attempts++;
+		const candidate = generateRandomFiveLetterDomain();
+		if (!exclude.has(candidate)) suggestions.add(candidate);
+	}
+	return Array.from(suggestions);
+}
+
+const COOLDOWN_MS = 1000 * 60 * 5; // 5 minutes
+const COOLDOWN_STORAGE_KEY = "nnole_domain_cooldown";
+
 function AccidentallyUseful({
 	accent,
-	domains,
-	isRefreshing,
-	cooldownError,
-	fetcher,
 	isMobile = false,
 }: {
 	accent: string;
-	domains: string[];
-	isRefreshing: boolean;
-	cooldownError: string | null;
-	fetcher: ReturnType<typeof useFetcher>;
 	isMobile?: boolean;
 }) {
+	const [domains, setDomains] = useState<string[]>(() => getFiveFreshSuggestions());
+	const [cooldownError, setCooldownError] = useState<string | null>(null);
+	const [lastRefresh, setLastRefresh] = useState<number>(0);
+
+	// Load last refresh time from localStorage on mount (persists across reloads)
+	useEffect(() => {
+		const stored = localStorage.getItem(COOLDOWN_STORAGE_KEY);
+		if (stored) setLastRefresh(parseInt(stored, 10));
+	}, []);
+
+	function handleRefresh() {
+		const now = Date.now();
+		if (lastRefresh && now - lastRefresh < COOLDOWN_MS) {
+			setCooldownError(
+				"Look. I went through the effort of generating these. The least you can do is pretend to consider one for a second."
+			);
+			// Clear the message after a few seconds
+			setTimeout(() => setCooldownError(null), 4200);
+			return;
+		}
+
+		const newOnes = getFiveFreshSuggestions(new Set(domains));
+		setDomains(newOnes);
+		const newTime = Date.now();
+		setLastRefresh(newTime);
+		localStorage.setItem(COOLDOWN_STORAGE_KEY, String(newTime));
+		setCooldownError(null);
+	}
+
 	return (
 		<section
 			id="useful"
@@ -1094,31 +1078,24 @@ function AccidentallyUseful({
 						))}
 
 						<div style={{ padding: "18px 20px" }}>
-							<fetcher.Form method="post">
-								<button
-									type="submit"
-									name="intent"
-									value="refresh-domains"
-									disabled={isRefreshing}
-									style={{
-										fontFamily: "var(--mono)",
-										fontSize: 11,
-										letterSpacing: "0.12em",
-										padding: "12px 18px",
-										border: `1px solid ${accent}`,
-										background: "transparent",
-										color: accent,
-										cursor: isRefreshing ? "default" : "pointer",
-										textTransform: "uppercase",
-										opacity: isRefreshing ? 0.5 : 1,
-										transition: "all 0.2s",
-									}}
-								>
-									{isRefreshing
-										? "generating more regret…"
-										: "↻ give me 5 more i don't need"}
-								</button>
-							</fetcher.Form>
+							<button
+								type="button"
+								onClick={handleRefresh}
+								style={{
+									fontFamily: "var(--mono)",
+									fontSize: 11,
+									letterSpacing: "0.12em",
+									padding: "12px 18px",
+									border: `1px solid ${accent}`,
+									background: "transparent",
+									color: accent,
+									cursor: "pointer",
+									textTransform: "uppercase",
+									transition: "all 0.2s",
+								}}
+							>
+								↻ give me 5 more i don't need
+							</button>
 
 							{cooldownError && (
 								<div
@@ -1152,7 +1129,7 @@ function AccidentallyUseful({
 							textTransform: "uppercase",
 						}}
 					>
-						list refreshes hourly · button cooldown: 5 min · no real checking performed
+						client-side only · button cooldown: 5 min · no real checking performed
 					</div>
 				</div>
 			</div>
@@ -1681,7 +1658,7 @@ function SearchVoid({ accent, isMobile = false }: { accent: string; isMobile?: b
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// CONTACT — now actually sends messages into the void (D1)
+// CONTACT — messages sent here go into the actual void (no DB)
 // ─────────────────────────────────────────────────────────────────────
 function Contact({ accent, isMobile = false }: { accent: string; isMobile?: boolean }) {
 	const fetcher = useFetcher();
