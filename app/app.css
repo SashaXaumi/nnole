@@ -8,9 +8,26 @@
 
 html,
 body {
-	@apply bg-white dark:bg-gray-950;
+	@apply bg-zinc-950;
+	color-scheme: dark;
+}
 
-	@media (prefers-color-scheme: dark) {
-		color-scheme: dark;
-	}
+/* Playful + slightly unhinged styling for nnole */
+.domain-row {
+	transition: all 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.domain-row:hover {
+	background-color: #18181b;
+	border-color: #52525b;
+	transform: translateY(-2px) rotate(-0.5deg);
+}
+
+.cooldown-message {
+	animation: unhingedPop 0.2s ease-out;
+}
+
+@keyframes unhingedPop {
+	from { opacity: 0; transform: translateY(-4px) rotate(-1deg); }
+	to { opacity: 1; transform: translateY(0) rotate(0deg); }
 }
