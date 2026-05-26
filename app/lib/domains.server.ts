@@ -29,17 +29,17 @@ export function generateUniqueCandidates(count: number, exclude: Set<string> = n
 
 /**
  * The main function used by the UI.
- * Returns up to 5 available domains from cache, triggering a refresh
- * if the last refresh was more than 1 hour ago (or never).
+ * Returns up to 5 random domain suggestions from cache.
+ * Triggers generation of fresh ones if the last batch is old.
  */
-export async function getFiveAvailableDomains(db: D1Database): Promise<string[]> {
-  // Check if we should do a lazy refresh first
-  await maybeTriggerHourlyRefresh(db);
+export async function getFiveDomainSuggestions(db: D1Database): Promise<string[]> {
+  // Check if we should generate fresh suggestions
+  await maybeGenerateFreshSuggestions(db);
 
   const result = await db
     .prepare(
       `SELECT domain FROM domains 
-       WHERE available = 1 
+       WHERE suggested = 1 
        ORDER BY RANDOM() 
        LIMIT 5`
     )
@@ -47,17 +47,17 @@ export async function getFiveAvailableDomains(db: D1Database): Promise<string[]>
 
   let domains = result.results.map((r) => r.domain);
 
-  // If we have fewer than 5 available in cache, generate some fresh ones
+  // If we have fewer than 5 suggestions in cache, generate some fresh ones
   if (domains.length < 5) {
     const needed = 5 - domains.length;
     const exclude = new Set(domains);
     const fresh = generateUniqueCandidates(needed, exclude);
 
-    // For now we treat all new random 5-letter domains as available
-    // (this will be replaced with real API checks later)
+    // These are generated suggestions only.
+    // We do not check or guarantee availability.
     const now = Date.now();
     const stmt = db.prepare(
-      "INSERT OR IGNORE INTO domains (domain, available, checked_at) VALUES (?, 1, ?)"
+      "INSERT OR IGNORE INTO domains (domain, suggested, generated_at) VALUES (?, 1, ?)"
     );
 
     for (const d of fresh) {
@@ -68,7 +68,7 @@ export async function getFiveAvailableDomains(db: D1Database): Promise<string[]>
     const second = await db
       .prepare(
         `SELECT domain FROM domains 
-         WHERE available = 1 
+         WHERE suggested = 1 
          ORDER BY RANDOM() 
          LIMIT 5`
       )
@@ -81,9 +81,9 @@ export async function getFiveAvailableDomains(db: D1Database): Promise<string[]>
 }
 
 /**
- * Enforces the "only refresh if > 1 hour since last visit-driven check" rule.
+ * Decides whether it's time to generate a fresh batch of suggestions.
  */
-async function maybeTriggerHourlyRefresh(db: D1Database) {
+async function maybeGenerateFreshSuggestions(db: D1Database) {
   const meta = await db
     .prepare("SELECT value FROM meta WHERE key = 'last_refresh'")
     .first<{ value: string }>();
@@ -93,67 +93,67 @@ async function maybeTriggerHourlyRefresh(db: D1Database) {
   const now = Date.now();
 
   if (!lastRefresh || now - lastRefresh > oneHourMs) {
-    await performRefresh(db, now);
+    await generateAndStoreNewSuggestions(db, now);
   }
 }
 
 /**
- * Generates new candidate domains and "checks" them.
- * Currently mocks all as available. This is the place to plug in a real API later.
+ * Generates new candidate domains and stores them as suggestions.
+ * No real availability checking is performed.
  */
-async function performRefresh(db: D1Database, now: number) {
+async function generateAndStoreNewSuggestions(db: D1Database, now: number) {
   // Get 20 fresh candidates we haven't seen recently
   const recent = await db
-    .prepare("SELECT domain FROM domains ORDER BY checked_at DESC LIMIT 50")
+    .prepare("SELECT domain FROM domains ORDER BY generated_at DESC LIMIT 50")
     .all<{ domain: string }>();
 
   const exclude = new Set(recent.results.map((r) => r.domain));
   const candidates = generateUniqueCandidates(20, exclude);
 
   const stmt = db.prepare(
-    "INSERT OR REPLACE INTO domains (domain, available, checked_at) VALUES (?, 1, ?)"
+    "INSERT OR REPLACE INTO domains (domain, suggested, generated_at) VALUES (?, 1, ?)"
   );
 
   for (const domain of candidates) {
     await stmt.bind(domain, now).run();
   }
 
-  // Update the last refresh timestamp
+  // Update the last generated timestamp
   await db
-    .prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_refresh', ?)")
+    .prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_generated', ?)")
     .bind(now.toString())
     .run();
 
-  console.log(`[nnole-domains] Performed refresh with ${candidates.length} new candidates`);
+  console.log(`[nnole-domains] Generated ${candidates.length} new suggestions`);
 }
 
 /**
  * Called when the user explicitly clicks "Get 5 more".
- * Respects a 5-minute cooldown (enforced by the caller via cookie for now).
- * Always forces a small top-up of fresh candidates.
+ * Respects a 5-minute cooldown.
+ * Forces generation of new suggestions.
  */
-export async function forceRefreshDomains(db: D1Database): Promise<string[]> {
+export async function forceNewDomainSuggestions(db: D1Database): Promise<string[]> {
   const now = Date.now();
 
   // Always add a few brand new candidates when user explicitly asks
   const recent = await db
-    .prepare("SELECT domain FROM domains ORDER BY checked_at DESC LIMIT 30")
+    .prepare("SELECT domain FROM domains ORDER BY generated_at DESC LIMIT 30")
     .all<{ domain: string }>();
 
   const exclude = new Set(recent.results.map((r) => r.domain));
   const candidates = generateUniqueCandidates(8, exclude);
 
   const stmt = db.prepare(
-    "INSERT OR REPLACE INTO domains (domain, available, checked_at) VALUES (?, 1, ?)"
+    "INSERT OR REPLACE INTO domains (domain, suggested, generated_at) VALUES (?, 1, ?)"
   );
 
   for (const domain of candidates) {
     await stmt.bind(domain, now).run();
   }
 
-  // Update last_refresh so the hourly logic doesn't fight us
+  // Update last_generated so the hourly logic doesn't fight us
   await db
-    .prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_refresh', ?)")
+    .prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_generated', ?)")
     .bind(now.toString())
     .run();
 
@@ -161,7 +161,7 @@ export async function forceRefreshDomains(db: D1Database): Promise<string[]> {
   const result = await db
     .prepare(
       `SELECT domain FROM domains 
-       WHERE available = 1 
+       WHERE suggested = 1 
        ORDER BY RANDOM() 
        LIMIT 5`
     )

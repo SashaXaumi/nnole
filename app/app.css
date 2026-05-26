@@ -1,33 +1,225 @@
 @import "tailwindcss" source(".");
 
 @theme {
-	--font-sans:
-		"Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
-		"Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+	--font-sans: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+	--font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+:root {
+	--bg: #f4f1ec;
+	--fg: #0a0a0a;
+	--muted: #8a857d;
+	--line: #d9d4cb;
+	--accent: #c64a2e;
+	--sans: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+	--mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+[data-theme="dark"] {
+	--bg: #0a0a0a;
+	--fg: #f4f1ec;
+	--muted: #6b6660;
+	--line: #1f1d1a;
+}
+
+* {
+	box-sizing: border-box;
 }
 
 html,
 body {
-	@apply bg-zinc-950;
-	color-scheme: dark;
+	background: var(--bg);
+	color: var(--fg);
+	font-family: var(--sans);
+	-webkit-font-smoothing: antialiased;
 }
 
-/* Playful + slightly unhinged styling for nnole */
-.domain-row {
-	transition: all 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
+body {
+	overflow-x: hidden;
+	transition: background 0.3s ease, color 0.3s ease;
 }
 
-.domain-row:hover {
-	background-color: #18181b;
-	border-color: #52525b;
-	transform: translateY(-2px) rotate(-0.5deg);
+a {
+	color: inherit;
+	text-decoration: none;
 }
 
-.cooldown-message {
-	animation: unhingedPop 0.2s ease-out;
+::selection {
+	background: var(--fg);
+	color: var(--bg);
 }
 
-@keyframes unhingedPop {
-	from { opacity: 0; transform: translateY(-4px) rotate(-1deg); }
-	to { opacity: 1; transform: translateY(0) rotate(0deg); }
+.mono {
+	font-family: var(--mono);
+	font-feature-settings: "ss01";
+}
+
+@keyframes noneScroll {
+	from {
+		transform: translateX(0);
+	}
+	to {
+		transform: translateX(-33.333%);
+	}
+}
+
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* ============================================
+   Structured Design System for nnole
+   ============================================ */
+
+.section {
+	border-top: 1px solid var(--line);
+	padding: 90px 28px 120px;
+}
+
+.section-head {
+	display: grid;
+	grid-template-columns: 60px 1fr 1fr;
+	gap: 24px;
+	align-items: end;
+	margin-bottom: 56px;
+}
+
+.section-head-num {
+	font-family: var(--mono);
+	font-size: 12px;
+	color: var(--muted);
+	letter-spacing: 0.08em;
+	padding-bottom: 8px;
+}
+
+.section-head-title {
+	font-size: clamp(40px, 6vw, 96px);
+	font-weight: 700;
+	letter-spacing: -0.04em;
+	line-height: 0.95;
+}
+
+.section-head-sub {
+	font-size: 14px;
+	color: var(--muted);
+	line-height: 1.5;
+	padding-bottom: 12px;
+	max-width: 360px;
+}
+
+/* Buttons */
+.btn {
+	font-family: var(--mono);
+	font-size: 11px;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	padding: 12px 20px;
+	border: 1px solid var(--line);
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.btn:hover {
+	border-color: var(--fg);
+}
+
+.btn-accent {
+	background: var(--accent);
+	color: #f4f1ec;
+	border-color: var(--accent);
+}
+
+.btn-accent:hover {
+	opacity: 0.9;
+}
+
+/* Form Fields */
+.field-label {
+	display: block;
+	font-family: var(--mono);
+	font-size: 11px;
+	letter-spacing: 0.08em;
+	color: var(--muted);
+	text-transform: uppercase;
+	margin-bottom: 8px;
+}
+
+.field-input {
+	width: 100%;
+	background: transparent;
+	border: none;
+	border-bottom: 1px solid var(--line);
+	outline: none;
+	padding: 8px 0;
+	color: var(--fg);
+	font-family: var(--sans);
+	font-size: 18px;
+	transition: border-color 0.2s;
+}
+
+.field-input:focus {
+	border-bottom-color: var(--fg);
+}
+
+.field-textarea {
+	resize: vertical;
+	min-height: 120px;
+}
+
+/* Cards / Product tiles */
+.card {
+	border: 1px solid var(--line);
+	padding: 24px;
+	transition: background 0.25s, color 0.25s;
+}
+
+.card.inverted {
+	background: var(--fg);
+	color: var(--bg);
+}
+
+/* Modal */
+.modal-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.6);
+	z-index: 200;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 20px;
+}
+
+.modal {
+	background: var(--bg);
+	color: var(--fg);
+	border: 1px solid var(--line);
+	width: 100%;
+	max-width: 520px;
+	max-height: 90vh;
+	overflow-y: auto;
+}
+
+/* Utility */
+.mono {
+	font-family: var(--mono);
+	font-feature-settings: "ss01";
+}
+
+.text-muted {
+	color: var(--muted);
+}
+
+.upper {
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
 }
