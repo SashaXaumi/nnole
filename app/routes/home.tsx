@@ -1309,7 +1309,7 @@ function About({ accent, isMobile = false }: { accent: string; isMobile?: boolea
 				</div>
 			</div>
 
-			<Marquee accent={accent} />
+			<Marquee accent={accent} isMobile={isMobile} />
 		</section>
 	);
 }
@@ -1343,7 +1343,7 @@ function Stat({ n, label }: { n: string; label: string }) {
 	);
 }
 
-function Marquee({ accent }: { accent: string }) {
+function Marquee({ accent, isMobile = false }: { accent: string; isMobile?: boolean }) {
 	const words = [
 		"nichts",
 		"rien",
