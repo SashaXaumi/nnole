@@ -59,15 +59,24 @@ Your local version will be available at `http://localhost:5173`.
 
 ### Setting up the Database
 
-This project uses D1. The first time you want to run it with a real database:
+This project uses Cloudflare D1.
+
+1. Create the D1 database (only needed once):
 
 ```bash
 npx wrangler d1 create nnole-domains
 ```
 
-Then copy the `database_id` into `wrangler.json` under the `d1_databases` array.
+2. **Attach the D1 database to your Worker via the dashboard** (this is how the binding is configured without putting the ID in the repo):
 
-After that, apply the migrations:
+   - Go to your Worker in the [Cloudflare dashboard](https://dash.cloudflare.com)
+   - **Settings → Bindings → + Add binding → D1 Database**
+   - Variable name: `DB`
+   - Select your `nnole-domains` database
+
+   > **Note:** The `DB_VAR` secret you added is not used for the D1 binding. D1 connections are configured under **Bindings**, not under Variables/Secrets.
+
+3. Apply the migrations:
 
 ```bash
 npx wrangler d1 migrations apply nnole-domains --remote   # for production
@@ -76,19 +85,15 @@ npx wrangler d1 migrations apply nnole-domains --local    # for local dev
 
 ## Deployment
 
-1. Make sure your `wrangler.json` points to the correct D1 database.
-2. Apply migrations to production:
-   ```bash
-   npx wrangler d1 migrations apply nnole-domains --remote
-   ```
-3. Build and deploy:
-   ```bash
-   npm run build && npx wrangler deploy
-   ```
+Because this repository is connected directly to Cloudflare for automatic deployments, **every push to `main` will trigger a production deploy**.
 
-You can also use the one-liner:
+### Important
+Before pushing any changes that touch the database layer, make sure the D1 binding is attached in the dashboard (see "Setting up the Database" above). Since `d1_databases` is no longer declared in `wrangler.json`, the binding must come from the Worker settings in the Cloudflare dashboard.
+
+To apply migrations or do manual deploys locally:
 
 ```bash
+npx wrangler d1 migrations apply nnole-domains --remote
 npm run build && npx wrangler deploy
 ```
 

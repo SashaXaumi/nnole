@@ -10,12 +10,5 @@
 	"upload_source_maps": true,
 	"vars": {
 		"VALUE_FROM_CLOUDFLARE": "Hello from Cloudflare"
-	},
-	"d1_databases": [
-		{
-			"binding": "DB",
-			"database_name": "nnole-domains",
-			"database_id": "__YOUR_D1_DATABASE_ID__"
-		}
-	]
+	}
 }
