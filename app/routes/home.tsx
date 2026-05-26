@@ -48,9 +48,9 @@ export async function action({ request }: Route.ActionArgs) {
 
 const ACCENT_OPTIONS = ["#c64a2e", "#2f6f5b", "#3b4cca", "#b88914", "#0a0a0a"];
 
-export default function Home({ loaderData }: Route.ComponentProps) {
+export default function Home() {
 	// Domains are now generated client-side inside AccidentallyUseful.
-	// No more server fetcher for that joke.
+	// No more server fetcher for that joke. Loader still runs but returns almost nothing.
 
 	const [theme, setTheme] = useState<"light" | "dark">("light");
 	const [accent, setAccent] = useState<string>(ACCENT_OPTIONS[0]);
