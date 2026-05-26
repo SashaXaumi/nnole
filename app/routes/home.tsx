@@ -31,7 +31,7 @@ function parseCookie(cookieHeader: string | null, name: string): string | null {
 }
 
 export async function loader({ context, request }: Route.LoaderArgs) {
-	const db = context.cloudflare.env.DB;
+	const db = context.cloudflare.env.DB_VAR;
 	const domains = await getFiveDomainSuggestions(db);
 	const cookie = request.headers.get("Cookie");
 	const lastRefreshStr = parseCookie(cookie, REFRESH_COOKIE);
@@ -40,7 +40,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 }
 
 export async function action({ context, request }: Route.ActionArgs) {
-	const db = context.cloudflare.env.DB;
+	const db = context.cloudflare.env.DB_VAR;
 	const formData = await request.formData();
 	const intent = formData.get("intent");
 
