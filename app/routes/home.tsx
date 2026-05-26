@@ -112,9 +112,27 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 	const [cart, setCart] = useState<number>(0);
 	const [mounted, setMounted] = useState(false);
 	const [checkoutOpen, setCheckoutOpen] = useState(false);
+	const [showCursor, setShowCursor] = useState(false);
+	const [isMobile, setIsMobile] = useState(false);
 
 	useEffect(() => {
 		setMounted(true);
+		// Only enable custom cursor on devices with fine pointer (mouse) + hover capability
+		const mqCursor = window.matchMedia("(pointer: fine) and (hover: hover)");
+		const updateCursor = () => setShowCursor(mqCursor.matches);
+		updateCursor();
+		mqCursor.addEventListener("change", updateCursor);
+
+		// Responsive breakpoint (768px)
+		const mqMobile = window.matchMedia("(max-width: 768px)");
+		const updateMobile = () => setIsMobile(mqMobile.matches);
+		updateMobile();
+		mqMobile.addEventListener("change", updateMobile);
+
+		return () => {
+			mqCursor.removeEventListener("change", updateCursor);
+			mqMobile.removeEventListener("change", updateMobile);
+		};
 	}, []);
 
 	useEffect(() => {
@@ -133,14 +151,15 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 
 	return (
 		<>
-			{mounted && cursorOn && <EraserCursor accent={accent} />}
-			<Nav onJump={jump} cart={cart} />
-			<Hero accent={accent} mounted={mounted} />
+			{mounted && showCursor && cursorOn && <EraserCursor accent={accent} />}
+			<Nav onJump={jump} cart={cart} isMobile={isMobile} />
+			<Hero accent={accent} mounted={mounted} isMobile={isMobile} />
 			<Shop
 				accent={accent}
 				cart={cart}
 				onAdd={() => setCart((c) => Math.max(0, c))}
 				onCheckout={() => setCheckoutOpen(true)}
+				isMobile={isMobile}
 			/>
 			<AccidentallyUseful
 				accent={accent}
@@ -148,13 +167,14 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 				isRefreshing={isRefreshing}
 				cooldownError={cooldownError}
 				fetcher={fetcher}
+				isMobile={isMobile}
 			/>
-			<About accent={accent} />
-			<Reviews accent={accent} />
-			<SearchVoid accent={accent} />
-			<Contact accent={accent} />
-			<Careers />
-			<Footer accent={accent} mounted={mounted} />
+			<About accent={accent} isMobile={isMobile} />
+			<Reviews accent={accent} isMobile={isMobile} />
+			<SearchVoid accent={accent} isMobile={isMobile} />
+			<Contact accent={accent} isMobile={isMobile} />
+			<Careers isMobile={isMobile} />
+			<Footer accent={accent} mounted={mounted} isMobile={isMobile} />
 
 			<ControlsPanel
 				theme={theme}
@@ -163,6 +183,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 				setAccent={setAccent}
 				cursorOn={cursorOn}
 				setCursorOn={setCursorOn}
+				isMobile={isMobile}
 			/>
 
 			<CheckoutModal
@@ -248,16 +269,140 @@ function EraserCursor({ accent }: { accent: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Top Nav
+// Top Nav — desktop horizontal + mobile hamburger + overlay menu
 // ─────────────────────────────────────────────────────────────────────
 function Nav({
 	onJump,
 	cart,
+	isMobile,
 }: {
 	onJump: (id: string) => void;
 	cart: number;
+	isMobile: boolean;
 }) {
 	const items = ["shop", "useful", "about", "reviews", "contact", "careers"];
+	const [menuOpen, setMenuOpen] = useState(false);
+
+	// Close menu after jumping on mobile
+	const handleJump = (id: string) => {
+		onJump(id);
+		if (isMobile) setMenuOpen(false);
+	};
+
+	if (isMobile) {
+		return (
+			<>
+				<nav
+					style={{
+						position: "fixed",
+						top: 0,
+						left: 0,
+						right: 0,
+						zIndex: 50,
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "space-between",
+						padding: "14px 16px",
+						mixBlendMode: "difference",
+						color: "#f4f1ec",
+						pointerEvents: "none",
+					}}
+				>
+					<div
+						style={{
+							pointerEvents: "auto",
+							fontFamily: "var(--mono)",
+							fontSize: 13,
+							letterSpacing: "0.04em",
+						}}
+					>
+						<span style={{ fontWeight: 500 }}>nnole</span>
+						<span style={{ opacity: 0.5 }}>.com</span>
+					</div>
+
+					<div style={{ pointerEvents: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+						<div
+							style={{
+								fontFamily: "var(--mono)",
+								fontSize: 12,
+								letterSpacing: "0.06em",
+							}}
+						>
+							cart ({cart})
+						</div>
+						<button
+							type="button"
+							onClick={() => setMenuOpen(!menuOpen)}
+							style={{
+								background: "transparent",
+								border: "1px solid rgba(244,241,236,0.5)",
+								color: "#f4f1ec",
+								padding: "6px 10px",
+								fontFamily: "var(--mono)",
+								fontSize: 16,
+								lineHeight: 1,
+								cursor: "pointer",
+							}}
+							aria-label="Menu"
+						>
+							{menuOpen ? "✕" : "☰"}
+						</button>
+					</div>
+				</nav>
+
+				{/* Mobile overlay menu */}
+				{menuOpen && (
+					<div
+						style={{
+							position: "fixed",
+							inset: 0,
+							zIndex: 60,
+							background: "rgba(10,10,10,0.92)",
+							display: "flex",
+							flexDirection: "column",
+							padding: "80px 24px 40px",
+						}}
+						onClick={() => setMenuOpen(false)}
+					>
+						<div
+							style={{
+								display: "flex",
+								flexDirection: "column",
+								gap: 4,
+							}}
+							onClick={(e) => e.stopPropagation()}
+						>
+							{items.map((i) => (
+								<a
+									key={i}
+									href={`#${i}`}
+									onClick={(e) => {
+										e.preventDefault();
+										handleJump(i);
+									}}
+									style={{
+										color: "#f4f1ec",
+										fontFamily: "var(--mono)",
+										fontSize: 18,
+										padding: "14px 0",
+										borderBottom: "1px solid rgba(244,241,236,0.15)",
+										opacity: 0.9,
+									}}
+								>
+									{i}
+								</a>
+							))}
+							<div style={{ paddingTop: 20, fontSize: 12, opacity: 0.6, fontFamily: "var(--mono)" }}>
+								Cart: {cart} item{cart === 1 ? "" : "s"} of nothing
+							</div>
+						</div>
+					</div>
+				)}
+			</>
+		);
+	}
+
+	// Desktop nav (unchanged behavior)
 	return (
 		<nav
 			style={{
@@ -338,7 +483,7 @@ function Nav({
 // ─────────────────────────────────────────────────────────────────────
 // HERO — colossal "NNOLE" letters that fall away on hover
 // ─────────────────────────────────────────────────────────────────────
-function Hero({ accent, mounted }: { accent: string; mounted: boolean }) {
+function Hero({ accent, mounted, isMobile }: { accent: string; mounted: boolean; isMobile: boolean }) {
 	const [erased, setErased] = useState<number[]>([]);
 	const [time, setTime] = useState<Date | null>(null);
 
@@ -350,6 +495,9 @@ function Hero({ accent, mounted }: { accent: string; mounted: boolean }) {
 
 	const letters = ["N", "N", "O", "L", "E"];
 
+	// Slightly tighter letter sizing on mobile to avoid overflow
+	const letterSize = isMobile ? "clamp(72px, 18vw, 140px)" : "clamp(110px, 24vw, 400px)";
+
 	return (
 		<section
 			data-screen-label="01 Hero"
@@ -359,7 +507,7 @@ function Hero({ accent, mounted }: { accent: string; mounted: boolean }) {
 				display: "flex",
 				flexDirection: "column",
 				justifyContent: "space-between",
-				padding: "90px 28px 28px",
+				padding: isMobile ? "70px 16px 20px" : "90px 28px 28px",
 			}}
 		>
 			<div
@@ -386,9 +534,10 @@ function Hero({ accent, mounted }: { accent: string; mounted: boolean }) {
 					display: "flex",
 					justifyContent: "center",
 					alignItems: "center",
-					gap: "clamp(6px, 1.8vw, 20px)",
+					gap: isMobile ? "clamp(2px, 1vw, 8px)" : "clamp(6px, 1.8vw, 20px)",
 					userSelect: "none",
 					flex: 1,
+					flexWrap: isMobile ? "wrap" : "nowrap", // allow graceful wrapping if needed
 				}}
 			>
 				{letters.map((L, i) => (
@@ -399,6 +548,7 @@ function Hero({ accent, mounted }: { accent: string; mounted: boolean }) {
 						onErase={() => setErased((e) => [...e, i])}
 						erased={erased.includes(i)}
 						accent={accent}
+						fontSize={letterSize}
 					/>
 				))}
 			</div>
@@ -406,13 +556,14 @@ function Hero({ accent, mounted }: { accent: string; mounted: boolean }) {
 			<div
 				style={{
 					display: "flex",
+					flexDirection: isMobile ? "column" : "row",
 					justifyContent: "space-between",
-					alignItems: "flex-end",
-					gap: 24,
+					alignItems: isMobile ? "flex-start" : "flex-end",
+					gap: isMobile ? 18 : 24,
 					flexWrap: "wrap",
 				}}
 			>
-				<div style={{ maxWidth: 420, fontSize: 15, lineHeight: 1.5 }}>
+				<div style={{ maxWidth: isMobile ? "100%" : 420, fontSize: isMobile ? 14 : 15, lineHeight: 1.5 }}>
 					<span
 						style={{
 							fontFamily: "var(--mono)",
@@ -440,7 +591,7 @@ function Hero({ accent, mounted }: { accent: string; mounted: boolean }) {
 						fontSize: 11,
 						color: "var(--muted)",
 						letterSpacing: "0.04em",
-						textAlign: "right",
+						textAlign: isMobile ? "left" : "right",
 					}}
 				>
 					<div>NNOLE = ELONN BACKWARDS</div>
@@ -457,17 +608,19 @@ function Hero({ accent, mounted }: { accent: string; mounted: boolean }) {
 					onClick={() => setErased([])}
 					style={{
 						position: "absolute",
-						top: "50%",
-						right: 28,
-						transform: "translateY(-50%)",
+						top: isMobile ? "auto" : "50%",
+						bottom: isMobile ? 80 : "auto",
+						right: isMobile ? 16 : 28,
+						transform: isMobile ? "none" : "translateY(-50%)",
 						background: "transparent",
 						border: "1px solid var(--line)",
 						color: "var(--muted)",
 						fontFamily: "var(--mono)",
 						fontSize: 10,
-						padding: "6px 10px",
+						padding: "8px 12px",
 						cursor: "pointer",
 						letterSpacing: "0.08em",
+						zIndex: 5,
 					}}
 				>
 					↻ restore ({erased.length})
@@ -483,12 +636,14 @@ function Letter({
 	onErase,
 	erased,
 	accent,
+	fontSize = "clamp(110px, 24vw, 400px)",
 }: {
 	ch: string;
 	index: number;
 	onErase: () => void;
 	erased: boolean;
 	accent: string;
+	fontSize?: string;
 }) {
 	const [hover, setHover] = useState(false);
 	return (
@@ -502,7 +657,7 @@ function Letter({
 			style={{
 				fontFamily: "Helvetica Neue, Helvetica, var(--sans)",
 				fontWeight: 900,
-				fontSize: "clamp(110px, 24vw, 400px)",
+				fontSize,
 				lineHeight: 0.82,
 				letterSpacing: "-0.05em",
 				color: hover ? accent : "var(--fg)",
@@ -537,11 +692,13 @@ function Shop({
 	onAdd,
 	cart,
 	onCheckout,
+	isMobile = false,
 }: {
 	accent: string;
 	onAdd: (name: string) => void;
 	cart: number;
 	onCheckout: () => void;
+	isMobile?: boolean;
 }) {
 	const products: ProductT[] = [
 		{
@@ -594,7 +751,7 @@ function Shop({
 			data-screen-label="02 Shop"
 			style={{
 				borderTop: "1px solid var(--line)",
-				padding: "90px 28px 120px",
+				padding: isMobile ? "48px 16px 64px" : "90px 28px 120px",
 			}}
 		>
 			<SectionHead
@@ -618,6 +775,7 @@ function Shop({
 						p={p}
 						accent={accent}
 						onAdd={() => onAdd(p.name)}
+						isMobile={isMobile}
 					/>
 				))}
 			</div>
@@ -679,10 +837,12 @@ function Product({
 	p,
 	accent,
 	onAdd,
+	isMobile = false,
 }: {
 	p: ProductT;
 	accent: string;
 	onAdd: () => void;
+	isMobile?: boolean;
 }) {
 	const [hover, setHover] = useState(false);
 	const [added, setAdded] = useState(false);
@@ -693,9 +853,9 @@ function Product({
 			style={{
 				borderRight: "1px solid var(--line)",
 				borderBottom: "1px solid var(--line)",
-				padding: 24,
+				padding: isMobile ? 16 : 24,
 				position: "relative",
-				minHeight: 360,
+				minHeight: isMobile ? 280 : 360,
 				display: "flex",
 				flexDirection: "column",
 				background: hover ? "var(--fg)" : "transparent",
@@ -840,12 +1000,14 @@ function AccidentallyUseful({
 	isRefreshing,
 	cooldownError,
 	fetcher,
+	isMobile = false,
 }: {
 	accent: string;
 	domains: string[];
 	isRefreshing: boolean;
 	cooldownError: string | null;
 	fetcher: ReturnType<typeof useFetcher>;
+	isMobile?: boolean;
 }) {
 	return (
 		<section
@@ -853,7 +1015,7 @@ function AccidentallyUseful({
 			data-screen-label="02b Accidentally Useful"
 			style={{
 				borderTop: "1px solid var(--line)",
-				padding: "90px 28px 120px",
+				padding: isMobile ? "48px 16px 64px" : "90px 28px 120px",
 			}}
 		>
 			<SectionHead
@@ -864,16 +1026,16 @@ function AccidentallyUseful({
 
 			<div
 				style={{
-					marginTop: 56,
+					marginTop: isMobile ? 32 : 56,
 					display: "grid",
-					gridTemplateColumns: "repeat(12, 1fr)",
-					gap: 24,
+					gridTemplateColumns: isMobile ? "1fr" : "repeat(12, 1fr)",
+					gap: isMobile ? 32 : 24,
 				}}
 			>
 				<div
 					style={{
-						gridColumn: "span 5",
-						fontSize: 16,
+						gridColumn: isMobile ? "auto" : "span 5",
+						fontSize: isMobile ? 15 : 16,
 						lineHeight: 1.55,
 						color: "var(--fg)",
 					}}
@@ -907,7 +1069,7 @@ function AccidentallyUseful({
 					</p>
 				</div>
 
-				<div style={{ gridColumn: "span 7" }}>
+				<div style={{ gridColumn: isMobile ? "auto" : "span 7" }}>
 					<div style={{ border: "1px solid var(--line)" }}>
 						<div
 							style={{
@@ -1041,14 +1203,14 @@ function DomainRow({ domain, accent }: { domain: string; accent: string }) {
 // ─────────────────────────────────────────────────────────────────────
 // ABOUT — manifesto + marquee of nothings
 // ─────────────────────────────────────────────────────────────────────
-function About({ accent }: { accent: string }) {
+function About({ accent, isMobile = false }: { accent: string; isMobile?: boolean }) {
 	return (
 		<section
 			id="about"
 			data-screen-label="03 About"
 			style={{
 				borderTop: "1px solid var(--line)",
-				padding: "90px 28px 120px",
+				padding: isMobile ? "48px 16px 64px" : "90px 28px 120px",
 				position: "relative",
 				overflow: "hidden",
 			}}
@@ -1058,14 +1220,14 @@ function About({ accent }: { accent: string }) {
 			<div
 				style={{
 					display: "grid",
-					gridTemplateColumns: "repeat(12, 1fr)",
-					gap: 24,
-					marginTop: 56,
+					gridTemplateColumns: isMobile ? "1fr" : "repeat(12, 1fr)",
+					gap: isMobile ? 32 : 24,
+					marginTop: isMobile ? 32 : 56,
 				}}
 			>
 				<div
 					style={{
-						gridColumn: "span 5",
+						gridColumn: isMobile ? "auto" : "span 5",
 						fontFamily: "var(--mono)",
 						fontSize: 11,
 						color: "var(--muted)",
@@ -1120,7 +1282,7 @@ function About({ accent }: { accent: string }) {
 					</div>
 				</div>
 
-				<div style={{ gridColumn: "span 7" }}>
+				<div style={{ gridColumn: isMobile ? "auto" : "span 7" }}>
 					<p
 						style={{
 							fontSize: "clamp(22px, 2.4vw, 32px)",
@@ -1226,9 +1388,9 @@ function Marquee({ accent }: { accent: string }) {
 	return (
 		<div
 			style={{
-				marginTop: 96,
-				marginLeft: -28,
-				marginRight: -28,
+				marginTop: isMobile ? 48 : 96,
+				marginLeft: isMobile ? -16 : -28,
+				marginRight: isMobile ? -16 : -28,
 				padding: "24px 0",
 				borderTop: "1px solid var(--line)",
 				borderBottom: "1px solid var(--line)",
@@ -1237,11 +1399,12 @@ function Marquee({ accent }: { accent: string }) {
 			}}
 		>
 			<div
+				className="marquee-text"
 				style={{
 					display: "inline-flex",
-					gap: 48,
+					gap: isMobile ? 32 : 48,
 					animation: "noneScroll 40s linear infinite",
-					fontSize: "clamp(48px, 8vw, 120px)",
+					fontSize: isMobile ? "clamp(32px, 12vw, 56px)" : "clamp(48px, 8vw, 120px)",
 					fontWeight: 300,
 					letterSpacing: "-0.03em",
 				}}
@@ -1262,7 +1425,7 @@ function Marquee({ accent }: { accent: string }) {
 // ─────────────────────────────────────────────────────────────────────
 // REVIEWS — testimonials from no one
 // ─────────────────────────────────────────────────────────────────────
-function Reviews({ accent }: { accent: string }) {
+function Reviews({ accent, isMobile = false }: { accent: string; isMobile?: boolean }) {
 	const reviews = [
 		{
 			body: "I expected nothing and that's exactly what I got. 0/5, would not recommend, but also would not not recommend.",
@@ -1292,7 +1455,7 @@ function Reviews({ accent }: { accent: string }) {
 			data-screen-label="04 Reviews"
 			style={{
 				borderTop: "1px solid var(--line)",
-				padding: "90px 28px 120px",
+				padding: isMobile ? "48px 16px 64px" : "90px 28px 120px",
 			}}
 		>
 			<SectionHead
@@ -1404,7 +1567,7 @@ function Reviews({ accent }: { accent: string }) {
 // ─────────────────────────────────────────────────────────────────────
 // SEARCH that returns nothing
 // ─────────────────────────────────────────────────────────────────────
-function SearchVoid({ accent }: { accent: string }) {
+function SearchVoid({ accent, isMobile = false }: { accent: string; isMobile?: boolean }) {
 	const [q, setQ] = useState("");
 	const [submitted, setSubmitted] = useState(false);
 
@@ -1420,7 +1583,7 @@ function SearchVoid({ accent }: { accent: string }) {
 			data-screen-label="05 Search"
 			style={{
 				borderTop: "1px solid var(--line)",
-				padding: "120px 28px",
+				padding: isMobile ? "60px 16px" : "120px 28px",
 				textAlign: "center",
 				background: "var(--fg)",
 				color: "var(--bg)",
@@ -1520,7 +1683,7 @@ function SearchVoid({ accent }: { accent: string }) {
 // ─────────────────────────────────────────────────────────────────────
 // CONTACT — now actually sends messages into the void (D1)
 // ─────────────────────────────────────────────────────────────────────
-function Contact({ accent }: { accent: string }) {
+function Contact({ accent, isMobile = false }: { accent: string; isMobile?: boolean }) {
 	const fetcher = useFetcher();
 	const isSending = fetcher.state === "submitting";
 	const isSuccess = fetcher.data?.success;
@@ -1537,9 +1700,9 @@ function Contact({ accent }: { accent: string }) {
 				method="post"
 				style={{
 					maxWidth: 720,
-					marginTop: 56,
+					marginTop: isMobile ? 32 : 56,
 					display: "grid",
-					gap: 32,
+					gap: isMobile ? 24 : 32,
 				}}
 			>
 				<input type="hidden" name="intent" value="contact" />
@@ -1605,7 +1768,7 @@ function Contact({ accent }: { accent: string }) {
 // ─────────────────────────────────────────────────────────────────────
 // CAREERS — open positions for no one
 // ─────────────────────────────────────────────────────────────────────
-function Careers() {
+function Careers({ isMobile = false }: { isMobile?: boolean }) {
 	const roles = [
 		{
 			title: "Senior Doer of Nothing",
@@ -1638,7 +1801,7 @@ function Careers() {
 			data-screen-label="07 Careers"
 			style={{
 				borderTop: "1px solid var(--line)",
-				padding: "90px 28px 120px",
+				padding: isMobile ? "48px 16px 64px" : "90px 28px 120px",
 			}}
 		>
 			<SectionHead
@@ -1649,7 +1812,7 @@ function Careers() {
 
 			<div style={{ marginTop: 56, border: "1px solid var(--line)" }}>
 				{roles.map((r, i) => (
-					<Role key={i} {...r} last={i === roles.length - 1} />
+					<Role key={i} {...r} last={i === roles.length - 1} isMobile={isMobile} />
 				))}
 			</div>
 		</section>
@@ -1662,14 +1825,84 @@ function Role({
 	loc,
 	type,
 	last,
+	isMobile = false,
 }: {
 	title: string;
 	team: string;
 	loc: string;
 	type: string;
 	last: boolean;
+	isMobile?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
+
+	// Mobile: stacked title + meta row
+	if (isMobile) {
+		return (
+			<div style={{ borderBottom: last ? "none" : "1px solid var(--line)" }}>
+				<button
+					type="button"
+					onClick={() => setOpen(!open)}
+					style={{
+						width: "100%",
+						background: "transparent",
+						border: "none",
+						cursor: "pointer",
+						padding: "16px",
+						display: "flex",
+						flexDirection: "column",
+						alignItems: "flex-start",
+						gap: 6,
+						textAlign: "left",
+						color: "inherit",
+						position: "relative",
+					}}
+				>
+					<div style={{ fontSize: 16, fontWeight: 500, paddingRight: 30 }}>{title}</div>
+					<div style={{ display: "flex", flexWrap: "wrap", gap: "6px 12px", fontSize: 12, color: "var(--muted)", fontFamily: "var(--mono)" }}>
+						<span>{team}</span>
+						<span style={{ opacity: 0.35 }}>·</span>
+						<span>{loc}</span>
+						<span style={{ opacity: 0.35 }}>·</span>
+						<span>{type}</span>
+					</div>
+					<div
+						style={{
+							position: "absolute",
+							right: 16,
+							top: 18,
+							transform: open ? "rotate(90deg)" : "rotate(0)",
+							transition: "transform 0.2s",
+							fontSize: 18,
+							opacity: 0.55,
+						}}
+					>
+						→
+					</div>
+				</button>
+				{open && (
+					<div
+						style={{
+							padding: "0 16px 18px",
+							color: "var(--muted)",
+							fontSize: 14,
+							lineHeight: 1.5,
+						}}
+					>
+						You will be responsible for doing nothing in a structured,
+						deliberate manner. No deliverables, no standups, no all-hands.
+						References from previous voids preferred but not required.
+						Compensation: commensurate with output.{" "}
+						<span style={{ color: "var(--fg)" }}>
+							Apply by sending nothing through the contact form.
+						</span>
+					</div>
+				)}
+			</div>
+		);
+	}
+
+	// Desktop grid row
 	return (
 		<div style={{ borderBottom: last ? "none" : "1px solid var(--line)" }}>
 			<button
@@ -1744,7 +1977,7 @@ function Role({
 // ─────────────────────────────────────────────────────────────────────
 // FOOTER
 // ─────────────────────────────────────────────────────────────────────
-function Footer({ accent, mounted }: { accent: string; mounted: boolean }) {
+function Footer({ accent, mounted, isMobile = false }: { accent: string; mounted: boolean; isMobile?: boolean }) {
 	const [time, setTime] = useState<Date | null>(null);
 
 	useEffect(() => {
@@ -1759,7 +1992,7 @@ function Footer({ accent, mounted }: { accent: string; mounted: boolean }) {
 		<footer
 			style={{
 				borderTop: "1px solid var(--line)",
-				padding: "60px 28px 28px",
+				padding: isMobile ? "40px 16px 24px" : "60px 28px 28px",
 				background: "var(--fg)",
 				color: "var(--bg)",
 			}}
@@ -1776,11 +2009,12 @@ function Footer({ accent, mounted }: { accent: string; mounted: boolean }) {
 				nnole.
 			</div>
 			<div
+				className="footer-grid"
 				style={{
-					marginTop: 56,
+					marginTop: isMobile ? 36 : 56,
 					display: "grid",
-					gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-					gap: 32,
+					gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+					gap: isMobile ? 24 : 32,
 					fontFamily: "var(--mono)",
 					fontSize: 12,
 					letterSpacing: "0.04em",
@@ -1882,6 +2116,7 @@ function ControlsPanel({
 	setAccent,
 	cursorOn,
 	setCursorOn,
+	isMobile = false,
 }: {
 	theme: "light" | "dark";
 	setTheme: (t: "light" | "dark") => void;
@@ -1889,6 +2124,7 @@ function ControlsPanel({
 	setAccent: (a: string) => void;
 	cursorOn: boolean;
 	setCursorOn: (v: boolean) => void;
+	isMobile?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
 
@@ -1902,8 +2138,8 @@ function ControlsPanel({
 					right: 16,
 					bottom: 16,
 					zIndex: 90,
-					width: 38,
-					height: 38,
+					width: isMobile ? 44 : 38,
+					height: isMobile ? 44 : 38,
 					borderRadius: "50%",
 					border: "1px solid var(--line)",
 					background: "var(--bg)",
@@ -1927,7 +2163,8 @@ function ControlsPanel({
 				right: 16,
 				bottom: 16,
 				zIndex: 90,
-				width: 260,
+				width: isMobile ? "calc(100% - 32px)" : 260,
+				maxWidth: 320,
 				background: "var(--bg)",
 				color: "var(--fg)",
 				border: "1px solid var(--line)",

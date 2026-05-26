@@ -83,12 +83,38 @@ a {
 	padding: 90px 28px 120px;
 }
 
+/* Mobile responsive padding for sections */
+@media (max-width: 768px) {
+	.section {
+		padding: 48px 16px 64px;
+	}
+}
+
 .section-head {
 	display: grid;
 	grid-template-columns: 60px 1fr 1fr;
 	gap: 24px;
 	align-items: end;
 	margin-bottom: 56px;
+}
+
+/* Section head responsive: stack on mobile */
+@media (max-width: 768px) {
+	.section-head {
+		grid-template-columns: 1fr;
+		gap: 8px;
+		margin-bottom: 32px;
+	}
+	.section-head-num {
+		padding-bottom: 0;
+	}
+	.section-head-title {
+		font-size: clamp(28px, 9vw, 48px) !important;
+	}
+	.section-head-sub {
+		max-width: none;
+		padding-bottom: 4px;
+	}
 }
 
 .section-head-num {
@@ -222,4 +248,54 @@ a {
 .upper {
 	text-transform: uppercase;
 	letter-spacing: 0.08em;
+}
+
+/* ============================================
+   Mobile Responsiveness (additional)
+   ============================================ */
+
+@media (max-width: 768px) {
+	/* Touch friendly targets */
+	button,
+	a[role="button"],
+	.btn,
+	input,
+	textarea {
+		min-height: 44px;
+	}
+
+	/* Marquee: reduce font size and slow animation slightly on mobile */
+	[data-screen-label="03 About"] .marquee-text {
+		font-size: clamp(32px, 12vw, 56px) !important;
+		animation-duration: 60s !important;
+	}
+
+	/* Footer grid stacks naturally via auto-fit but tighten */
+	footer .footer-grid {
+		gap: 24px;
+	}
+
+	/* Reduce huge hero meta text sizes */
+	.hero-meta {
+		font-size: 12px !important;
+	}
+
+	/* Make form inputs a bit smaller on mobile for better fit */
+	.field-input {
+		font-size: 16px !important; /* prevent iOS zoom */
+	}
+}
+
+/* Very small phones */
+@media (max-width: 480px) {
+	.section {
+		padding: 36px 14px 48px;
+	}
+}
+
+/* Ensure no horizontal overflow anywhere */
+html,
+body {
+	overflow-x: hidden;
+	max-width: 100%;
 }
