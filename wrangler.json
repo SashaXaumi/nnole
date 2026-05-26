@@ -15,7 +15,7 @@
 		{
 			"binding": "DB",
 			"database_name": "nnole-domains",
-			"database_id": "ee0d4353-79a4-4a93-8526-65adaa677351"
+			"database_id": "__YOUR_D1_DATABASE_ID__"
 		}
 	]
 }
