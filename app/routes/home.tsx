@@ -1252,10 +1252,27 @@ function About({ accent, isMobile = false }: { accent: string; isMobile?: boolea
 							fontSize: 22,
 							color: "var(--fg)",
 							marginTop: 6,
+							marginBottom: 28,
 							fontWeight: 400,
 						}}
 					>
 						None. (Hiring? Also none.)
+					</div>
+
+					<div style={{ borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+						GO-TO-MARKET
+					</div>
+					<div
+						style={{
+							fontFamily: "var(--sans)",
+							fontSize: 22,
+							color: "var(--fg)",
+							marginTop: 6,
+							fontWeight: 400,
+						}}
+					>
+						To be dropped, unprompted, into every "share your vibe-coded
+						app" and "show me your startup" thread on X.
 					</div>
 				</div>
 
