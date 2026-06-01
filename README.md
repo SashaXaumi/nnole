@@ -23,6 +23,8 @@ We make no guarantees about availability. In fact, we openly admit we don't chec
 
 The site exists primarily to be stared at, to waste a few minutes of your life, and to serve as a small monument to the strange human impulse to buy domains for no reason.
 
+It also exists, secondarily, to be dropped — unprompted — into every "share your vibe-coded app" and "show me your startup" thread on X.
+
 ## One Accidentally Useful Feature
 
 The domain suggestions.
