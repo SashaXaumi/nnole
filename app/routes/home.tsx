@@ -9,14 +9,37 @@ import {
 // Note: Domain suggestions are now purely client-side (no DB, no server).
 // The "accidentally useful" bit is now actually accidental and local.
 
+const SITE_URL = "https://nnole.com";
+const TITLE = "nnole.com — a website about nothing";
+const DESCRIPTION =
+	"A domain bought out of boredom. Spells ELON backwards (close enough). Now hosting a website about absolutely nothing.";
+const OG_IMAGE = `${SITE_URL}/og.png`;
+const OG_IMAGE_ALT =
+	"Giant NNOLE letters on paper, the last E falling off in rust red. A website about nothing.";
+
 export function meta({}: Route.MetaArgs) {
 	return [
-		{ title: "nnole.com — a website about nothing" },
-		{
-			name: "description",
-			content:
-				"A domain bought out of boredom. Spells ELON backwards (close enough). Now hosting a website about absolutely nothing.",
-		},
+		{ title: TITLE },
+		{ name: "description", content: DESCRIPTION },
+
+		// Open Graph (used by X/Twitter, plus everything else)
+		{ property: "og:type", content: "website" },
+		{ property: "og:url", content: `${SITE_URL}/` },
+		{ property: "og:site_name", content: "nnole" },
+		{ property: "og:title", content: TITLE },
+		{ property: "og:description", content: DESCRIPTION },
+		{ property: "og:image", content: OG_IMAGE },
+		{ property: "og:image:type", content: "image/png" },
+		{ property: "og:image:width", content: "1200" },
+		{ property: "og:image:height", content: "630" },
+		{ property: "og:image:alt", content: OG_IMAGE_ALT },
+
+		// Twitter card
+		{ name: "twitter:card", content: "summary_large_image" },
+		{ name: "twitter:title", content: TITLE },
+		{ name: "twitter:description", content: DESCRIPTION },
+		{ name: "twitter:image", content: OG_IMAGE },
+		{ name: "twitter:image:alt", content: OG_IMAGE_ALT },
 	];
 }
 
