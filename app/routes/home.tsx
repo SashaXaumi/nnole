@@ -558,7 +558,9 @@ function Hero({ accent, mounted, isMobile }: { accent: string; mounted: boolean;
 				>
 					<div>NNOLE = ELONN BACKWARDS</div>
 					<div>(close enough)</div>
-					<div>VISITORS TODAY: 0</div>
+					<div suppressHydrationWarning>
+						VISITORS TODAY: {mounted ? "1 (you)" : "0"}
+					</div>
 					<div>FEATURES SHIPPED: 1 (regrettably)</div>
 					<div style={{ color: accent }}>↘ scroll for less</div>
 				</div>
