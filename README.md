@@ -1,38 +1,30 @@
 # nnole
 
-**A website about nothing.**
+**Content delivery for very large video.**
 
 ## The Story
 
-I bought the domain `nnole.com` for no particular reason.
+nnole.com started as a joke: a domain bought out of boredom, hosting a
+deliberately pointless "website about nothing" — a shop selling six varieties
+of nothing, a search that found nothing, a contact form that sent messages
+into a void.
 
-One day I looked at it and realized it was basically "Elon" spelled backwards.  
-At that point I felt emotionally committed to doing something with it.
+Then a friend asked if the domain could serve a very large VR video file.
+It could. Word got around.
 
-Instead of building something useful, productive, or even mildly ambitious, I made a website whose entire purpose is to celebrate its own lack of purpose.
+Today nnole is a small, invite-only CDN serving real clients — mostly
+multi-gigabyte VR and 360° video, delivered from redundant object storage
+through a global edge cache. The joke era is over, but its visual language
+(and exactly one falling-letters gag) survives on the marketing site.
 
-This is that website.
+## What the site is
 
-## What is nnole?
+This repo is the marketing/landing site at [nnole.com](https://nnole.com).
+It is **not** the delivery path itself — client content is served separately.
 
-nnole is a deliberately pointless, anti-productivity, conceptual art project disguised as a website.
-
-It has no mission statement, no founder story, no newsletter, no roadmap, and no desire to "solve" anything.  
-Its one (1) "useful" feature is a random 5-letter `.com` domain suggestion generator.  
-We make no guarantees about availability. In fact, we openly admit we don't check.
-
-The site exists primarily to be stared at, to waste a few minutes of your life, and to serve as a small monument to the strange human impulse to buy domains for no reason.
-
-It also exists, secondarily, to be dropped — unprompted — into every "share your vibe-coded app" and "show me your startup" thread on X.
-
-## One Accidentally Useful Feature
-
-The domain suggestions.
-
-We genuinely considered building a proper domain availability checker.  
-It seemed like too much hassle, so we gave up.
-
-Instead, the site just generates random 5-letter combinations and presents them with the honest disclaimer that some of them *might* be available... but we have no idea.
+The site includes a live status section with zero fabricated numbers: the
+visitor's browser measures real round-trip latency against the network and
+shows the real edge location (`/api/edge`) serving them.
 
 ## Tech Stack
 
@@ -40,42 +32,34 @@ Instead, the site just generates random 5-letter combinations and presents them 
 - Cloudflare Workers
 - Tailwind CSS
 
-Zero external databases. The "accidentally useful" domain suggestions are generated in the browser.
+No database. The status data comes from the incoming request itself
+(edge colo / geo) plus client-side timing.
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 18+
-- A Cloudflare account (free tier is enough)
+- A Cloudflare account
 
-### Clone & Run Locally
+### Develop
 
-```bash
-git clone https://github.com/YOUR_USERNAME/nnole.git
-cd nnole
+```sh
 npm install
 npm run dev
 ```
 
-Your local version will be available at `http://localhost:5173`.
+### Check & deploy
 
-## Deployment
+```sh
+npm run check    # typecheck + build + dry-run deploy
+npm run deploy
+```
 
-Because this repository is connected directly to Cloudflare for automatic deployments, **every push to `main` will trigger a production deploy**.
+### OG image
 
-### Important
-No databases or special bindings are required. Just push to `main` (or run `npm run deploy` locally after building). The site runs with zero external services beyond the Workers runtime.
+The Open Graph image is generated, not hand-drawn:
 
-## License
-
-This project is free for personal and commercial use.
-
-You are free to use, modify, fork, or even deploy your own version of nnole without asking for permission.
-
-Attribution is appreciated but not required.
-
----
-
-*Built out of boredom on a domain bought out of boredom.*  
-*Spells ELONN backwards (close enough).*
+```sh
+python3 scripts/generate-og.py   # needs Pillow; writes public/og.png
+```

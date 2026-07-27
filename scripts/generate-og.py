@@ -52,8 +52,8 @@ pad = 56 * SS
 top_y = 72 * SS
 def spaced_caps(s):
     return s  # JetBrains Mono already reads spaced; tracking applied via tracked()
-tracked(d, (pad, top_y), "EST. ∅ — A WEBSITE ABOUT NOTHING", m11, MUTED, tracking=1.5, anchor_y="m")
-right_label = "VOL. 000 / ISSUE 000"
+tracked(d, (pad, top_y), "EST. ∅ — NOW A CONTENT DELIVERY NETWORK", m11, MUTED, tracking=1.5, anchor_y="m")
+right_label = "CDN / VR VIDEO / INVITE-ONLY"
 rw = tracked_width(d, right_label, m11, 1.5)
 tracked(d, (W * SS - pad - rw, top_y), right_label, m11, MUTED, tracking=1.5, anchor_y="m")
 
@@ -82,11 +82,11 @@ for i, ch in enumerate(letters):
         d.text((x, baseline), ch, font=big, fill=FG, anchor="ls")
     x += widths[i] + track_big * SS
 
-# ── tagline: "A website about *nothing*."  (accent underline under "nothing")
+# ── tagline: "Content delivery for *very large* video."  (accent underline)
 tag_y = 492 * SS
 f_light = inter(34, 300)
 f_bold = inter(34, 700)
-seg1, seg2, seg3 = "A website about ", "nothing", "."
+seg1, seg2, seg3 = "Content delivery for ", "very large", " video."
 w1 = d.textlength(seg1, font=f_light)
 w2 = d.textlength(seg2, font=f_bold)
 w3 = d.textlength(seg3, font=f_light)
@@ -99,7 +99,7 @@ d.text((tx + w1 + w2, tag_y), seg3, font=f_light, fill=FG, anchor="ls")
 # ── bottom mono strip
 bot_y = H * SS - 72 * SS
 d.line([pad, bot_y - 26 * SS, W * SS - pad, bot_y - 26 * SS], fill=LINE, width=lw)
-tracked(d, (pad, bot_y), "NNOLE = ELONN BACKWARDS (CLOSE ENOUGH)", m11, MUTED, tracking=1.5, anchor_y="m")
+tracked(d, (pad, bot_y), "FORMERLY A WEBSITE ABOUT NOTHING (LONG STORY)", m11, MUTED, tracking=1.5, anchor_y="m")
 url = "nnole.com"
 uw = tracked_width(d, url, m11, 1.5)
 tracked(d, (W * SS - pad - uw, bot_y), url, m11, ACCENT, tracking=1.5, anchor_y="m")

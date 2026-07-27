@@ -1,21 +1,26 @@
 import type { Route } from "./+types/home";
-import { useFetcher } from "react-router";
 import {
-	type CSSProperties,
+	useCallback,
 	useEffect,
 	useRef,
 	useState,
 } from "react";
-// Note: Domain suggestions are now purely client-side (no DB, no server).
-// The "accidentally useful" bit is now actually accidental and local.
+
+// nnole — a small, invite-only CDN specializing in very large video (VR/360°).
+// The site started life as "a website about nothing"; the visual language of
+// that era survives on purpose. The claims below don't: everything stated here
+// is real. The status section measures real latency from the visitor's
+// connection and shows the real edge location serving them.
 
 const SITE_URL = "https://nnole.com";
-const TITLE = "nnole.com — a website about nothing";
+const TITLE = "nnole — content delivery for very large video";
 const DESCRIPTION =
-	"A domain bought out of boredom. Spells ELON backwards (close enough). Now hosting a website about absolutely nothing.";
+	"An invite-only CDN built for VR and 360° video: multi-gigabyte files, redundant storage, a global edge cache. Formerly a website about nothing.";
 const OG_IMAGE = `${SITE_URL}/og.png`;
 const OG_IMAGE_ALT =
-	"Giant NNOLE letters on paper, the last E falling off in rust red. A website about nothing.";
+	"Giant NNOLE letters, the last E falling off in rust red. Content delivery for very large video.";
+
+const CONTACT_EMAIL = "n@nnole.com";
 
 export function meta({}: Route.MetaArgs) {
 	return [
@@ -43,49 +48,63 @@ export function meta({}: Route.MetaArgs) {
 	];
 }
 
-// Note: No more D1 database. Domain suggestions are generated in the browser.
-// Contact messages are sent into the actual void (we just pretend it worked).
-
-export async function loader() {
-	return { now: Date.now() };
-}
-
-export async function action({ request }: Route.ActionArgs) {
-	const formData = await request.formData();
-	const intent = formData.get("intent");
-
-	// Contact form — we still accept submissions, we just don't keep them.
-	if (intent === "contact") {
-		const body = formData.get("body") as string;
-
-		if (!body?.trim()) {
-			return Response.json({ error: "empty" }, { status: 400 });
-		}
-
-		// We read it. We nod solemnly. Then we let it go.
-		return Response.json({ success: true });
-	}
-
-	return Response.json({ error: "unknown_intent" }, { status: 400 });
+export async function loader({ context }: Route.LoaderArgs) {
+	// The edge location that served this very page render — real data, free.
+	const cf = context.cloudflare.cf;
+	return {
+		edge: {
+			colo: cf?.colo ?? null,
+			city: cf?.city ?? null,
+			country: cf?.country ?? null,
+		},
+	};
 }
 
 const ACCENT_OPTIONS = ["#c64a2e", "#2f6f5b", "#3b4cca", "#b88914", "#0a0a0a"];
 
-export default function Home() {
-	// Domains are now generated client-side inside AccidentallyUseful.
-	// No more server fetcher for that joke. Loader still runs but returns almost nothing.
+type EdgeState = {
+	colo: string | null;
+	city: string | null;
+	country: string | null;
+};
 
+export default function Home({ loaderData }: Route.ComponentProps) {
 	const [theme, setTheme] = useState<"light" | "dark">("light");
 	const [accent, setAccent] = useState<string>(ACCENT_OPTIONS[0]);
 	const [cursorOn, setCursorOn] = useState<boolean>(true);
-	const [cart, setCart] = useState<number>(0);
 	const [mounted, setMounted] = useState(false);
-	const [checkoutOpen, setCheckoutOpen] = useState(false);
 	const [showCursor, setShowCursor] = useState(false);
 	const [isMobile, setIsMobile] = useState(false);
 
+	// Live edge measurements (real, from the visitor's connection)
+	const [edge, setEdge] = useState<EdgeState>(loaderData.edge);
+	const [rtt, setRtt] = useState<number | null>(null);
+	const [measuring, setMeasuring] = useState(false);
+
+	const measure = useCallback(async () => {
+		setMeasuring(true);
+		try {
+			// Warm-up request absorbs connection setup, then take the best of 3.
+			const warm = await fetch("/api/edge", { cache: "no-store" });
+			const info = (await warm.json()) as EdgeState;
+			if (info.colo) setEdge(info);
+			const samples: number[] = [];
+			for (let i = 0; i < 3; i++) {
+				const t0 = performance.now();
+				await fetch("/api/edge", { cache: "no-store" });
+				samples.push(performance.now() - t0);
+			}
+			setRtt(Math.round(Math.min(...samples)));
+		} catch {
+			// Leave rtt as-is; the section renders dashes.
+		}
+		setMeasuring(false);
+	}, []);
+
 	useEffect(() => {
 		setMounted(true);
+		measure();
+
 		// Only enable custom cursor on devices with fine pointer (mouse) + hover capability
 		const mqCursor = window.matchMedia("(pointer: fine) and (hover: hover)");
 		const updateCursor = () => setShowCursor(mqCursor.matches);
@@ -102,7 +121,7 @@ export default function Home() {
 			mqCursor.removeEventListener("change", updateCursor);
 			mqMobile.removeEventListener("change", updateMobile);
 		};
-	}, []);
+	}, [measure]);
 
 	useEffect(() => {
 		document.documentElement.dataset.theme = theme;
@@ -121,22 +140,28 @@ export default function Home() {
 	return (
 		<>
 			{mounted && showCursor && cursorOn && <EraserCursor accent={accent} />}
-			<Nav onJump={jump} cart={cart} isMobile={isMobile} />
-			<Hero accent={accent} mounted={mounted} isMobile={isMobile} />
-			<Shop
+			<Nav onJump={jump} isMobile={isMobile} />
+			<Hero
 				accent={accent}
-				cart={cart}
-				onAdd={() => setCart((c) => Math.max(0, c))}
-				onCheckout={() => setCheckoutOpen(true)}
+				mounted={mounted}
 				isMobile={isMobile}
+				edge={edge}
+				rtt={rtt}
 			/>
-			<AccidentallyUseful accent={accent} isMobile={isMobile} />
+			<Capabilities accent={accent} isMobile={isMobile} />
+			<VRSection accent={accent} isMobile={isMobile} />
+			<StatusBoard
+				accent={accent}
+				isMobile={isMobile}
+				edge={edge}
+				rtt={rtt}
+				measuring={measuring}
+				onMeasure={measure}
+				mounted={mounted}
+			/>
 			<About accent={accent} isMobile={isMobile} />
-			<Reviews accent={accent} isMobile={isMobile} />
-			<SearchVoid accent={accent} isMobile={isMobile} />
 			<Contact accent={accent} isMobile={isMobile} />
-			<Careers isMobile={isMobile} />
-			<Footer accent={accent} mounted={mounted} isMobile={isMobile} />
+			<Footer accent={accent} mounted={mounted} isMobile={isMobile} edge={edge} />
 
 			<ControlsPanel
 				theme={theme}
@@ -146,16 +171,6 @@ export default function Home() {
 				cursorOn={cursorOn}
 				setCursorOn={setCursorOn}
 				isMobile={isMobile}
-			/>
-
-			<CheckoutModal
-				open={checkoutOpen}
-				onClose={() => setCheckoutOpen(false)}
-				accent={accent}
-				onComplete={() => {
-					setCart(0);
-					setCheckoutOpen(false);
-				}}
 			/>
 		</>
 	);
@@ -235,14 +250,12 @@ function EraserCursor({ accent }: { accent: string }) {
 // ─────────────────────────────────────────────────────────────────────
 function Nav({
 	onJump,
-	cart,
 	isMobile,
 }: {
 	onJump: (id: string) => void;
-	cart: number;
 	isMobile: boolean;
 }) {
-	const items = ["shop", "useful", "about", "reviews", "contact", "careers"];
+	const items = ["delivery", "vr", "status", "about", "contact"];
 	const [menuOpen, setMenuOpen] = useState(false);
 
 	// Close menu after jumping on mobile
@@ -279,10 +292,17 @@ function Nav({
 						}}
 					>
 						<span style={{ fontWeight: 500 }}>nnole</span>
-						<span style={{ opacity: 0.5 }}>.com</span>
+						<span style={{ opacity: 0.5 }}> cdn</span>
 					</div>
 
-					<div style={{ pointerEvents: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+					<div
+						style={{
+							pointerEvents: "auto",
+							display: "flex",
+							alignItems: "center",
+							gap: 12,
+						}}
+					>
 						<div
 							style={{
 								fontFamily: "var(--mono)",
@@ -290,7 +310,7 @@ function Nav({
 								letterSpacing: "0.06em",
 							}}
 						>
-							cart ({cart})
+							● up
 						</div>
 						<button
 							type="button"
@@ -354,8 +374,15 @@ function Nav({
 									{i}
 								</a>
 							))}
-							<div style={{ paddingTop: 20, fontSize: 12, opacity: 0.6, fontFamily: "var(--mono)" }}>
-								Cart: {cart} item{cart === 1 ? "" : "s"} of nothing
+							<div
+								style={{
+									paddingTop: 20,
+									fontSize: 12,
+									opacity: 0.6,
+									fontFamily: "var(--mono)",
+								}}
+							>
+								Invite-only · very large video, delivered
 							</div>
 						</div>
 					</div>
@@ -364,7 +391,7 @@ function Nav({
 		);
 	}
 
-	// Desktop nav (unchanged behavior)
+	// Desktop nav
 	return (
 		<nav
 			style={{
@@ -391,7 +418,7 @@ function Nav({
 				}}
 			>
 				<span style={{ fontWeight: 500 }}>nnole</span>
-				<span style={{ opacity: 0.5 }}>.com</span>
+				<span style={{ opacity: 0.5 }}> — content delivery</span>
 			</div>
 			<div
 				style={{
@@ -436,16 +463,29 @@ function Nav({
 					letterSpacing: "0.06em",
 				}}
 			>
-				cart ({cart})
+				● operational
 			</div>
 		</nav>
 	);
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// HERO — colossal "NNOLE" letters that fall away on hover
+// HERO — colossal "NNOLE" letters that fall away on hover.
+// The one gag we kept. A CDN can have one gag.
 // ─────────────────────────────────────────────────────────────────────
-function Hero({ accent, mounted, isMobile }: { accent: string; mounted: boolean; isMobile: boolean }) {
+function Hero({
+	accent,
+	mounted,
+	isMobile,
+	edge,
+	rtt,
+}: {
+	accent: string;
+	mounted: boolean;
+	isMobile: boolean;
+	edge: EdgeState;
+	rtt: number | null;
+}) {
 	const [erased, setErased] = useState<number[]>([]);
 	const [time, setTime] = useState<Date | null>(null);
 
@@ -458,7 +498,9 @@ function Hero({ accent, mounted, isMobile }: { accent: string; mounted: boolean;
 	const letters = ["N", "N", "O", "L", "E"];
 
 	// Slightly tighter letter sizing on mobile to avoid overflow
-	const letterSize = isMobile ? "clamp(72px, 18vw, 140px)" : "clamp(110px, 24vw, 400px)";
+	const letterSize = isMobile
+		? "clamp(72px, 18vw, 140px)"
+		: "clamp(110px, 24vw, 400px)";
 
 	return (
 		<section
@@ -488,7 +530,7 @@ function Hero({ accent, mounted, isMobile }: { accent: string; mounted: boolean;
 						? time.toLocaleTimeString([], { hour12: false })
 						: "--:--:--"}
 				</div>
-				<div>VOL. 000 / ISSUE 000</div>
+				<div>CDN / VR VIDEO / INVITE-ONLY</div>
 			</div>
 
 			<div
@@ -499,7 +541,7 @@ function Hero({ accent, mounted, isMobile }: { accent: string; mounted: boolean;
 					gap: isMobile ? "clamp(2px, 1vw, 8px)" : "clamp(6px, 1.8vw, 20px)",
 					userSelect: "none",
 					flex: 1,
-					flexWrap: isMobile ? "wrap" : "nowrap", // allow graceful wrapping if needed
+					flexWrap: isMobile ? "wrap" : "nowrap",
 				}}
 			>
 				{letters.map((L, i) => (
@@ -525,7 +567,13 @@ function Hero({ accent, mounted, isMobile }: { accent: string; mounted: boolean;
 					flexWrap: "wrap",
 				}}
 			>
-				<div style={{ maxWidth: isMobile ? "100%" : 420, fontSize: isMobile ? 14 : 15, lineHeight: 1.5 }}>
+				<div
+					style={{
+						maxWidth: isMobile ? "100%" : 440,
+						fontSize: isMobile ? 14 : 15,
+						lineHeight: 1.5,
+					}}
+				>
 					<span
 						style={{
 							fontFamily: "var(--mono)",
@@ -537,14 +585,16 @@ function Hero({ accent, mounted, isMobile }: { accent: string; mounted: boolean;
 							marginBottom: 10,
 						}}
 					>
-						↓ A website about
+						↓ A content delivery network
 					</span>
-					<strong style={{ fontWeight: 700 }}>Nothing.</strong> Built out of
-					boredom on a domain bought out of boredom. No products, no newsletter,
-					no opinions, no journey, no mission, no founder story, no roadmap,
-					no team page.{" "}
+					<strong style={{ fontWeight: 700 }}>
+						For absurdly large video.
+					</strong>{" "}
+					nnole moves multi-gigabyte VR and 360° files from redundant storage,
+					through a global edge cache, into your viewer's headset. Invite-only,
+					deliberately small, quietly reliable.{" "}
 					<span style={{ color: "var(--muted)" }}>
-						(One accidentally useful feature. We're sorry.)
+						(Formerly a website about nothing. Long story — see About.)
 					</span>
 				</div>
 				<div
@@ -556,13 +606,16 @@ function Hero({ accent, mounted, isMobile }: { accent: string; mounted: boolean;
 						textAlign: isMobile ? "left" : "right",
 					}}
 				>
-					<div>NNOLE = ELONN BACKWARDS</div>
-					<div>(close enough)</div>
 					<div suppressHydrationWarning>
-						VISITORS TODAY: {mounted ? "1 (you)" : "0"}
+						YOUR EDGE: {mounted && edge.colo ? edge.colo : "---"}
 					</div>
-					<div>FEATURES SHIPPED: 1 (regrettably)</div>
-					<div style={{ color: accent }}>↘ scroll for less</div>
+					<div suppressHydrationWarning>
+						ROUND TRIP: {mounted && rtt !== null ? `${rtt} MS` : "-- MS"}
+					</div>
+					<div>
+						STATUS: <span style={{ color: accent }}>●</span> OPERATIONAL
+					</div>
+					<div style={{ color: accent }}>↘ scroll for the details</div>
 				</div>
 			</div>
 
@@ -641,78 +694,65 @@ function Letter({
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// SHOP — products that are all nothing
+// 01 DELIVERY — what the network actually does
 // ─────────────────────────────────────────────────────────────────────
-type ProductT = {
+type CapabilityT = {
+	glyph: string;
 	name: string;
 	sub: string;
-	price: string;
-	stock: number;
-	variant: "A" | "B" | "C";
+	spec: string;
 };
 
-function Shop({
+function Capabilities({
 	accent,
-	onAdd,
-	cart,
-	onCheckout,
 	isMobile = false,
 }: {
 	accent: string;
-	onAdd: (name: string) => void;
-	cart: number;
-	onCheckout: () => void;
 	isMobile?: boolean;
 }) {
-	const products: ProductT[] = [
+	const caps: CapabilityT[] = [
 		{
-			name: "Nothing, Original",
-			sub: "The classic. Untouched since 1923.",
-			price: "$0.00",
-			stock: 0,
-			variant: "A",
+			glyph: "GB+",
+			name: "Large-object delivery",
+			sub: "Multi-gigabyte files served whole or in pieces. Byte-range requests mean instant seeks and resumable downloads — no re-buffering a 40 GB file from zero.",
+			spec: "HTTP 206 / RANGE",
 		},
 		{
-			name: "Nothing, Limited Ed.",
-			sub: "Same as the original. Costlier.",
-			price: "$248",
-			stock: 1,
-			variant: "B",
+			glyph: "8K",
+			name: "VR & 360° video",
+			sub: "High-bitrate stereoscopic video streamed straight to headsets. Our specialty, and most of our traffic.",
+			spec: "180° / 360° / SBS / TB",
 		},
 		{
-			name: "Nothing, Travel Size",
-			sub: "Now in a smaller package of nothing.",
-			price: "$0.00",
-			stock: 0,
-			variant: "A",
+			glyph: "◍",
+			name: "Global edge cache",
+			sub: "Content is cached in cities near your viewers and served from there — not from one distant, overworked server.",
+			spec: "EDGE-CACHED",
 		},
 		{
-			name: "Nothing, Subscription",
-			sub: "Receive nothing, every month, automatically.",
-			price: "$12/mo",
-			stock: 0,
-			variant: "C",
+			glyph: "URL",
+			name: "Hotlink-ready links",
+			sub: "Stable, direct URLs you can drop into any player, page, or app. CORS is configured so embeds just work.",
+			spec: "CORS / DIRECT",
 		},
 		{
-			name: "Nothing, Industrial",
-			sub: "For factory floors, warehouses, and silos.",
-			price: "POA",
-			stock: 0,
-			variant: "B",
+			glyph: "TLS",
+			name: "Encrypted by default",
+			sub: "HTTPS only, over modern protocols. Nothing is served in the clear.",
+			spec: "HTTP/2 · HTTP/3",
 		},
 		{
-			name: "Nothing, For Two",
-			sub: "A romantic option. Comes with two of nothing.",
-			price: "$48",
-			stock: 0,
-			variant: "A",
+			glyph: "×2",
+			name: "Redundant origins",
+			sub: "Every object lives in two independent storage backends. If one has a bad day, delivery doesn't notice.",
+			spec: "DUAL ORIGIN",
 		},
 	];
 
 	return (
 		<section
-			id="shop"
-			data-screen-label="02 Shop"
+			id="delivery"
+			data-screen-label="02 Delivery"
 			style={{
 				borderTop: "1px solid var(--line)",
 				padding: isMobile ? "48px 16px 64px" : "90px 28px 120px",
@@ -720,8 +760,8 @@ function Shop({
 		>
 			<SectionHead
 				num="01"
-				title="The Shop"
-				sub="Six varieties of nothing, sourced ethically from absolutely nowhere."
+				title="Delivery"
+				sub="What the network does, minus the adjectives. Every claim on this page is one we can keep."
 			/>
 
 			<div
@@ -733,83 +773,37 @@ function Shop({
 					marginTop: 56,
 				}}
 			>
-				{products.map((p, i) => (
-					<Product
-						key={i}
-						p={p}
-						accent={accent}
-						onAdd={() => onAdd(p.name)}
-						isMobile={isMobile}
-					/>
+				{caps.map((c, i) => (
+					<Capability key={i} c={c} index={i} isMobile={isMobile} />
 				))}
 			</div>
 
-			{cart > 0 && (
-				<div
-					style={{
-						marginTop: 32,
-						padding: 20,
-						border: `1px solid ${accent}`,
-						display: "flex",
-						justifyContent: "space-between",
-						alignItems: "center",
-						background: "transparent",
-					}}
-				>
-					<div>
-						<div
-							style={{
-								fontFamily: "var(--mono)",
-								fontSize: 11,
-								color: "var(--muted)",
-								letterSpacing: "0.08em",
-							}}
-						>
-							YOUR CART
-						</div>
-						<div style={{ fontSize: 24, fontWeight: 500, marginTop: 4 }}>
-							{cart} × nothing{" "}
-							<span style={{ color: "var(--muted)", fontWeight: 300 }}>
-								= still nothing
-							</span>
-						</div>
-					</div>
-					<button
-						type="button"
-						onClick={onCheckout}
-						style={{
-							fontFamily: "var(--mono)",
-							fontSize: 11,
-							letterSpacing: "0.1em",
-							padding: "14px 22px",
-							border: "none",
-							background: accent,
-							color: "#f4f1ec",
-							cursor: "pointer",
-							textTransform: "uppercase",
-						}}
-					>
-						checkout →
-					</button>
-				</div>
-			)}
+			<div
+				style={{
+					marginTop: 24,
+					fontFamily: "var(--mono)",
+					fontSize: 10,
+					color: "var(--muted)",
+					letterSpacing: "0.08em",
+					textTransform: "uppercase",
+				}}
+			>
+				no transcoding · no watermarks · your bytes, exactly as uploaded
+			</div>
 		</section>
 	);
 }
 
-function Product({
-	p,
-	accent,
-	onAdd,
+function Capability({
+	c,
+	index,
 	isMobile = false,
 }: {
-	p: ProductT;
-	accent: string;
-	onAdd: () => void;
+	c: CapabilityT;
+	index: number;
 	isMobile?: boolean;
 }) {
 	const [hover, setHover] = useState(false);
-	const [added, setAdded] = useState(false);
 	return (
 		<div
 			onMouseEnter={() => setHover(true)}
@@ -819,7 +813,7 @@ function Product({
 				borderBottom: "1px solid var(--line)",
 				padding: isMobile ? 16 : 24,
 				position: "relative",
-				minHeight: isMobile ? 280 : 360,
+				minHeight: isMobile ? 240 : 320,
 				display: "flex",
 				flexDirection: "column",
 				background: hover ? "var(--fg)" : "transparent",
@@ -827,7 +821,24 @@ function Product({
 				transition: "background 0.25s, color 0.25s",
 			}}
 		>
-			<Placeholder variant={p.variant} hover={hover} />
+			<div
+				style={{
+					width: "100%",
+					aspectRatio: "4 / 2",
+					border: `1px dashed ${
+						hover ? "rgba(244,241,236,0.25)" : "var(--line)"
+					}`,
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "center",
+					fontFamily: "var(--mono)",
+					fontSize: "clamp(32px, 4vw, 48px)",
+					fontWeight: 500,
+					letterSpacing: "-0.02em",
+				}}
+			>
+				{c.glyph}
+			</div>
 
 			<div style={{ flex: 1, marginTop: 18 }}>
 				<div
@@ -839,11 +850,10 @@ function Product({
 						textTransform: "uppercase",
 					}}
 				>
-					SKU 000.
-					{String(Math.abs(p.name.length * 7)).padStart(3, "0")}
+					CAP {String(index + 1).padStart(3, "0")}
 				</div>
 				<div style={{ fontSize: 18, fontWeight: 500, marginTop: 6 }}>
-					{p.name}
+					{c.name}
 				</div>
 				<div
 					style={{
@@ -853,175 +863,43 @@ function Product({
 						opacity: 0.7,
 					}}
 				>
-					{p.sub}
+					{c.sub}
 				</div>
 			</div>
 
 			<div
 				style={{
-					display: "flex",
-					justifyContent: "space-between",
-					alignItems: "center",
 					marginTop: 18,
 					paddingTop: 14,
 					borderTop: `1px solid ${
 						hover ? "rgba(244,241,236,0.2)" : "var(--line)"
 					}`,
-				}}
-			>
-				<span className="mono" style={{ fontSize: 13 }}>
-					{p.price}
-				</span>
-				<button
-					type="button"
-					onClick={() => {
-						onAdd();
-						setAdded(true);
-						setTimeout(() => setAdded(false), 1200);
-					}}
-					style={{
-						fontFamily: "var(--mono)",
-						fontSize: 10,
-						letterSpacing: "0.12em",
-						padding: "8px 12px",
-						border: `1px solid ${
-							hover ? "rgba(244,241,236,0.4)" : "var(--line)"
-						}`,
-						background: added ? accent : "transparent",
-						color: added ? "#f4f1ec" : "inherit",
-						cursor: "pointer",
-						textTransform: "uppercase",
-						transition: "all 0.2s",
-					}}
-				>
-					{added ? "∅ in cart" : "+ add nothing"}
-				</button>
-			</div>
-
-			<div
-				style={{
-					position: "absolute",
-					top: 16,
-					right: 16,
 					fontFamily: "var(--mono)",
 					fontSize: 10,
-					letterSpacing: "0.08em",
-					opacity: 0.5,
+					letterSpacing: "0.1em",
+					opacity: 0.7,
 				}}
 			>
-				STOCK: {p.stock}
+				{c.spec}
 			</div>
 		</div>
 	);
 }
 
-function Placeholder({
-	variant,
-	hover,
-}: {
-	variant: "A" | "B" | "C";
-	hover: boolean;
-}) {
-	const stripeColor = hover ? "rgba(244,241,236,0.12)" : "rgba(10,10,10,0.06)";
-	return (
-		<div
-			style={{
-				width: "100%",
-				aspectRatio: "4 / 3",
-				border: `1px dashed ${
-					hover ? "rgba(244,241,236,0.25)" : "var(--line)"
-				}`,
-				position: "relative",
-				overflow: "hidden",
-				background: `repeating-linear-gradient(45deg, transparent 0 12px, ${stripeColor} 12px 13px)`,
-			}}
-		>
-			<span
-				style={{
-					position: "absolute",
-					inset: 0,
-					display: "flex",
-					alignItems: "center",
-					justifyContent: "center",
-					fontFamily: "var(--mono)",
-					fontSize: 11,
-					letterSpacing: "0.12em",
-					color: hover ? "rgba(244,241,236,0.55)" : "var(--muted)",
-				}}
-			>
-				[ nothing.{variant.toLowerCase()} ]
-			</span>
-		</div>
-	);
-}
-
 // ─────────────────────────────────────────────────────────────────────
-// ACCIDENTALLY USEFUL — now 100% client-side (no DB, no server)
+// 02 VR — the specialty, explained
 // ─────────────────────────────────────────────────────────────────────
-
-function generateRandomFiveLetterDomain(): string {
-	const alphabet = "abcdefghijklmnopqrstuvwxyz";
-	let result = "";
-	for (let i = 0; i < 5; i++) {
-		result += alphabet[Math.floor(Math.random() * alphabet.length)];
-	}
-	return result;
-}
-
-function getFiveFreshSuggestions(exclude: Set<string> = new Set()): string[] {
-	const suggestions = new Set<string>();
-	let attempts = 0;
-	while (suggestions.size < 5 && attempts < 100) {
-		attempts++;
-		const candidate = generateRandomFiveLetterDomain();
-		if (!exclude.has(candidate)) suggestions.add(candidate);
-	}
-	return Array.from(suggestions);
-}
-
-const COOLDOWN_MS = 1000 * 60 * 5; // 5 minutes
-const COOLDOWN_STORAGE_KEY = "nnole_domain_cooldown";
-
-function AccidentallyUseful({
+function VRSection({
 	accent,
 	isMobile = false,
 }: {
 	accent: string;
 	isMobile?: boolean;
 }) {
-	const [domains, setDomains] = useState<string[]>(() => getFiveFreshSuggestions());
-	const [cooldownError, setCooldownError] = useState<string | null>(null);
-	const [lastRefresh, setLastRefresh] = useState<number>(0);
-
-	// Load last refresh time from localStorage on mount (persists across reloads)
-	useEffect(() => {
-		const stored = localStorage.getItem(COOLDOWN_STORAGE_KEY);
-		if (stored) setLastRefresh(parseInt(stored, 10));
-	}, []);
-
-	function handleRefresh() {
-		const now = Date.now();
-		if (lastRefresh && now - lastRefresh < COOLDOWN_MS) {
-			setCooldownError(
-				"Look. I went through the effort of generating these. The least you can do is pretend to consider one for a second."
-			);
-			// Clear the message after a few seconds
-			setTimeout(() => setCooldownError(null), 4200);
-			return;
-		}
-
-		const newOnes = getFiveFreshSuggestions(new Set(domains));
-		setDomains(newOnes);
-		const newTime = Date.now();
-		setLastRefresh(newTime);
-		localStorage.setItem(COOLDOWN_STORAGE_KEY, String(newTime));
-		setCooldownError(null);
-	}
-
 	return (
 		<section
-			id="useful"
-			data-screen-label="02b Accidentally Useful"
+			id="vr"
+			data-screen-label="03 VR"
 			style={{
 				borderTop: "1px solid var(--line)",
 				padding: isMobile ? "48px 16px 64px" : "90px 28px 120px",
@@ -1029,8 +907,8 @@ function AccidentallyUseful({
 		>
 			<SectionHead
 				num="02"
-				title="Accidentally Useful"
-				sub="We promised nothing. We accidentally shipped one (1) thing that sort of does something. We are deeply sorry (we considered a real checker but it was too much work)."
+				title="Built for VR"
+				sub="Most CDNs treat an 8K stereoscopic file as an inconvenience. For us it's the whole point."
 			/>
 
 			<div
@@ -1046,35 +924,34 @@ function AccidentallyUseful({
 						gridColumn: isMobile ? "auto" : "span 5",
 						fontSize: isMobile ? 15 : 16,
 						lineHeight: 1.55,
-						color: "var(--fg)",
 					}}
 				>
 					<p style={{ marginBottom: 18 }}>
-						This domain was purchased{" "}
+						VR video is a hostile workload:{" "}
 						<em
 							style={{
 								fontStyle: "normal",
 								borderBottom: `2px solid ${accent}`,
 							}}
 						>
-							out of boredom
+							enormous files, brutal bitrates
 						</em>
-						. Zero plan. Zero vision. Just pure "it was available and my
-						card was saved" energy.
+						, and viewers who scrub constantly. A headset that waits is a
+						headset that gets taken off.
 					</p>
 					<p style={{ marginBottom: 18, color: "var(--muted)" }}>
-						Then I noticed{" "}
+						So the network is tuned for exactly that: honest byte-range
+						responses for instant seeking, edge caching so the second viewer in
+						a city never touches the origin, and{" "}
 						<span style={{ color: "var(--fg)" }}>
-							nnole spells ELONN backwards (close enough)
+							zero transcoding — your mastered bitrate arrives untouched
 						</span>
-						, and at that point I was emotionally committed to the bit.
+						.
 					</p>
 					<p style={{ color: "var(--muted)" }}>
-						To make peace with the situation, this site now generates five
-						random 5-letter .com suggestions. We genuinely considered building
-						a proper domain availability checker, but it seemed like too much
-						hassle, so we gave up. Some of these may actually be available.
-						Most probably aren't. We have no idea.
+						Links work in the players your viewers actually use: headset
+						browsers and the usual dedicated VR players (DeoVR, HereSphere,
+						Skybox and friends). Paste the URL, put the headset on, done.
 					</p>
 				</div>
 
@@ -1084,77 +961,68 @@ function AccidentallyUseful({
 							style={{
 								padding: "14px 20px",
 								borderBottom: "1px solid var(--line)",
-								display: "flex",
-								alignItems: "center",
-								justifyContent: "space-between",
 								fontFamily: "var(--mono)",
 								fontSize: 11,
 								letterSpacing: "0.1em",
 								color: "var(--muted)",
 								textTransform: "uppercase",
+								display: "flex",
+								justifyContent: "space-between",
 							}}
 						>
-							<span>5 random .com suggestions</span>
-							<span style={{ color: accent }}>● some may be shockingly available</span>
+							<span>What a delivery looks like</span>
+							<span style={{ color: accent }}>● live traffic pattern</span>
 						</div>
-
-						{domains.map((domain) => (
-							<DomainRow key={domain} domain={domain} accent={accent} />
-						))}
-
-						<div style={{ padding: "18px 20px" }}>
-							<button
-								type="button"
-								onClick={handleRefresh}
+						{[
+							["GET /v/…/scene-04_8k_sbs.mp4", "Range: bytes=0-"],
+							["→ 206 Partial Content", "from edge cache"],
+							["viewer scrubs to 12:40", "Range: bytes=9 663 676 416-"],
+							["→ 206 Partial Content", "seek served in one round trip"],
+							["headset plays on", "origin never contacted"],
+						].map(([l, r], i) => (
+							<div
+								key={i}
 								style={{
+									display: "flex",
+									justifyContent: "space-between",
+									gap: 12,
+									padding: "13px 20px",
+									borderBottom: i === 4 ? "none" : "1px solid var(--line)",
 									fontFamily: "var(--mono)",
-									fontSize: 11,
-									letterSpacing: "0.12em",
-									padding: "12px 18px",
-									border: `1px solid ${accent}`,
-									background: "transparent",
-									color: accent,
-									cursor: "pointer",
-									textTransform: "uppercase",
-									transition: "all 0.2s",
+									fontSize: isMobile ? 11 : 13,
 								}}
 							>
-								↻ give me 5 more i don't need
-							</button>
-
-							{cooldownError && (
-								<div
+								<span
 									style={{
-										marginTop: 16,
-										padding: "12px 14px",
-										border: "1px solid var(--line)",
-										fontFamily: "var(--mono)",
-										fontSize: 12,
-										color: "var(--fg)",
-										lineHeight: 1.5,
-										animation: "fadeIn 0.3s ease",
+										overflow: "hidden",
+										textOverflow: "ellipsis",
+										whiteSpace: "nowrap",
 									}}
 								>
-									{cooldownError}{" "}
-									<span style={{ color: "var(--muted)" }}>
-										I'm not mad, I'm just disappointed (in both of us).
-									</span>
-								</div>
-							)}
-						</div>
+									{l}
+								</span>
+								<span
+									style={{ color: "var(--muted)", whiteSpace: "nowrap" }}
+								>
+									{r}
+								</span>
+							</div>
+						))}
 					</div>
 
 					<div
 						style={{
-							marginTop: 16,
-							fontFamily: "var(--mono)",
-							fontSize: 10,
-							color: "var(--muted)",
-							letterSpacing: "0.08em",
-							textTransform: "uppercase",
+							marginTop: 24,
+							paddingTop: 24,
+							borderTop: "1px solid var(--line)",
+							display: "grid",
+							gridTemplateColumns: "repeat(3, 1fr)",
+							gap: 24,
 						}}
 					>
-						client-side only · button cooldown: 5 min · no real checking performed
+						<Stat n="8K" label="Resolutions served" />
+						<Stat n="0" label="Re-encodes performed" />
+						<Stat n="206" label="Favorite status code" />
 					</div>
 				</div>
 			</div>
@@ -1162,54 +1030,188 @@ function AccidentallyUseful({
 	);
 }
 
-function DomainRow({ domain, accent }: { domain: string; accent: string }) {
-	const [hover, setHover] = useState(false);
+// ─────────────────────────────────────────────────────────────────────
+// 03 STATUS — inverted section, real measurements from this visit
+// ─────────────────────────────────────────────────────────────────────
+function StatusBoard({
+	accent,
+	isMobile = false,
+	edge,
+	rtt,
+	measuring,
+	onMeasure,
+	mounted,
+}: {
+	accent: string;
+	isMobile?: boolean;
+	edge: EdgeState;
+	rtt: number | null;
+	measuring: boolean;
+	onMeasure: () => void;
+	mounted: boolean;
+}) {
+	const place =
+		edge.city && edge.country
+			? `${edge.city}, ${edge.country}`
+			: edge.country ?? null;
+
 	return (
-		<div
-			onMouseEnter={() => setHover(true)}
-			onMouseLeave={() => setHover(false)}
+		<section
+			id="status"
+			data-screen-label="04 Status"
 			style={{
-				borderBottom: "1px solid var(--line)",
-				padding: "16px 20px",
-				display: "flex",
-				alignItems: "center",
-				justifyContent: "space-between",
-				background: hover ? "var(--fg)" : "transparent",
-				color: hover ? "var(--bg)" : "var(--fg)",
-				transition: "background 0.2s, color 0.2s",
+				borderTop: "1px solid var(--line)",
+				padding: isMobile ? "60px 16px" : "120px 28px",
+				background: "var(--fg)",
+				color: "var(--bg)",
 			}}
 		>
-			<span
-				className="mono"
-				style={{ fontSize: 17, fontWeight: 500, letterSpacing: "-0.01em" }}
-			>
-				{domain}.com
-			</span>
-			<span
+			<div
 				style={{
 					fontFamily: "var(--mono)",
-					fontSize: 10,
+					fontSize: 11,
 					letterSpacing: "0.12em",
+					opacity: 0.5,
 					textTransform: "uppercase",
-					color: hover ? "var(--bg)" : accent,
-					border: `1px solid ${hover ? "var(--bg)" : accent}`,
-					padding: "5px 10px",
 				}}
 			>
-				might be real
-			</span>
-		</div>
+				03 — Live status
+			</div>
+			<h2
+				style={{
+					fontSize: "clamp(36px, 5vw, 72px)",
+					fontWeight: 300,
+					letterSpacing: "-0.03em",
+					margin: "24px 0 12px",
+					maxWidth: 900,
+					lineHeight: 1.1,
+				}}
+			>
+				Working. Measured from your connection, just now.
+			</h2>
+			<p style={{ opacity: 0.6, maxWidth: 620, marginBottom: 40 }}>
+				No invented nines. The numbers below were measured by your browser
+				against this very network while the page loaded.
+			</p>
+
+			<div
+				style={{
+					display: "grid",
+					gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
+					gap: 1,
+					background: "rgba(244,241,236,0.15)",
+					border: "1px solid rgba(244,241,236,0.15)",
+					maxWidth: 1100,
+				}}
+			>
+				{[
+					{
+						label: "SYSTEMS",
+						value: (
+							<span>
+								<span style={{ color: accent }}>●</span> OPERATIONAL
+							</span>
+						),
+						note: "all edges answering",
+					},
+					{
+						label: "YOUR EDGE",
+						value: mounted && edge.colo ? edge.colo : "---",
+						note: place && mounted ? `serving ${place}` : "nearest city to you",
+					},
+					{
+						label: "ROUND TRIP",
+						value: mounted && rtt !== null ? `${rtt} ms` : "…",
+						note: "best of 3, this visit",
+					},
+					{
+						label: "DELIVERY",
+						value: "206 ✓",
+						note: "range requests honored",
+					},
+				].map((s, i) => (
+					<div
+						key={i}
+						style={{
+							background: "var(--fg)",
+							padding: isMobile ? "20px 16px" : "28px 24px",
+						}}
+					>
+						<div
+							style={{
+								fontFamily: "var(--mono)",
+								fontSize: 10,
+								letterSpacing: "0.12em",
+								opacity: 0.5,
+							}}
+						>
+							{s.label}
+						</div>
+						<div
+							suppressHydrationWarning
+							style={{
+								fontSize: isMobile ? 24 : 34,
+								fontWeight: 500,
+								marginTop: 10,
+								fontFamily: "var(--mono)",
+								letterSpacing: "-0.02em",
+							}}
+						>
+							{s.value}
+						</div>
+						<div
+							suppressHydrationWarning
+							style={{
+								fontFamily: "var(--mono)",
+								fontSize: 10,
+								letterSpacing: "0.06em",
+								opacity: 0.45,
+								marginTop: 8,
+							}}
+						>
+							{s.note}
+						</div>
+					</div>
+				))}
+			</div>
+
+			<button
+				type="button"
+				onClick={onMeasure}
+				disabled={measuring}
+				style={{
+					marginTop: 32,
+					fontFamily: "var(--mono)",
+					fontSize: 11,
+					letterSpacing: "0.12em",
+					padding: "12px 18px",
+					border: `1px solid ${accent}`,
+					background: "transparent",
+					color: accent,
+					cursor: measuring ? "wait" : "pointer",
+					textTransform: "uppercase",
+				}}
+			>
+				{measuring ? "measuring…" : "↻ measure again"}
+			</button>
+		</section>
 	);
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// ABOUT — manifesto + marquee of nothings
+// 04 ABOUT — the origin story, owned
 // ─────────────────────────────────────────────────────────────────────
-function About({ accent, isMobile = false }: { accent: string; isMobile?: boolean }) {
+function About({
+	accent,
+	isMobile = false,
+}: {
+	accent: string;
+	isMobile?: boolean;
+}) {
 	return (
 		<section
 			id="about"
-			data-screen-label="03 About"
+			data-screen-label="05 About"
 			style={{
 				borderTop: "1px solid var(--line)",
 				padding: isMobile ? "48px 16px 64px" : "90px 28px 120px",
@@ -1217,7 +1219,11 @@ function About({ accent, isMobile = false }: { accent: string; isMobile?: boolea
 				overflow: "hidden",
 			}}
 		>
-			<SectionHead num="03" title="About" sub="A brief, mostly empty history." />
+			<SectionHead
+				num="04"
+				title="About"
+				sub="A short history of an accidental pivot."
+			/>
 
 			<div
 				style={{
@@ -1249,11 +1255,12 @@ function About({ accent, isMobile = false }: { accent: string; isMobile?: boolea
 							fontWeight: 400,
 						}}
 					>
-						The night the domain renewed itself.
+						As a joke. A website about nothing, on a domain bought out of
+						boredom.
 					</div>
 
 					<div style={{ borderTop: "1px solid var(--line)", paddingTop: 10 }}>
-						HEADQUARTERS
+						THE PIVOT
 					</div>
 					<div
 						style={{
@@ -1265,11 +1272,12 @@ function About({ accent, isMobile = false }: { accent: string; isMobile?: boolea
 							fontWeight: 400,
 						}}
 					>
-						The space between two adjacent thoughts.
+						A friend asked if the domain could serve a very large VR file. It
+						could. Word got around.
 					</div>
 
 					<div style={{ borderTop: "1px solid var(--line)", paddingTop: 10 }}>
-						EMPLOYEES
+						CLIENTS
 					</div>
 					<div
 						style={{
@@ -1281,11 +1289,11 @@ function About({ accent, isMobile = false }: { accent: string; isMobile?: boolea
 							fontWeight: 400,
 						}}
 					>
-						None. (Hiring? Also none.)
+						A short list, by invitation. We'd like to keep it that way a while.
 					</div>
 
 					<div style={{ borderTop: "1px solid var(--line)", paddingTop: 10 }}>
-						GO-TO-MARKET
+						ROADMAP
 					</div>
 					<div
 						style={{
@@ -1296,8 +1304,8 @@ function About({ accent, isMobile = false }: { accent: string; isMobile?: boolea
 							fontWeight: 400,
 						}}
 					>
-						To be dropped, unprompted, into every "share your vibe-coded
-						app" and "show me your startup" thread on X.
+						Still none, on principle. The files just keep arriving, and we keep
+						delivering them.
 					</div>
 				</div>
 
@@ -1310,7 +1318,7 @@ function About({ accent, isMobile = false }: { accent: string; isMobile?: boolea
 							textWrap: "pretty",
 						}}
 					>
-						We make{" "}
+						We used to make{" "}
 						<em
 							style={{
 								fontStyle: "normal",
@@ -1319,19 +1327,20 @@ function About({ accent, isMobile = false }: { accent: string; isMobile?: boolea
 						>
 							nothing
 						</em>
-						. Not the trendy, performative kind of nothing — the structural
-						kind. The kind that's already there before you start. The kind
-						that remains when you finish. The kind that, if you stare at it
-						long enough, starts to look like a kind of{" "}
+						. Six varieties of it, ethically sourced from nowhere. It turns out
+						years of practicing nothing make you unusually good at the one
+						thing a delivery network owes you:{" "}
 						<em
 							style={{
 								fontStyle: "normal",
 								borderBottom: `2px solid ${accent}`,
 							}}
 						>
-							something
+							staying out of the way
 						</em>
-						, which is when we politely ask you to look away.
+						. No transcoding, no re-compression, no watermarks, no opinions
+						about your content. Your bytes, exactly as uploaded, from somewhere
+						near your viewer.
 					</p>
 
 					<div
@@ -1344,9 +1353,9 @@ function About({ accent, isMobile = false }: { accent: string; isMobile?: boolea
 							gap: 24,
 						}}
 					>
-						<Stat n="0" label="Products in stock" />
-						<Stat n="1" label="Accidental features" />
-						<Stat n="∞" label="Possible interpretations" />
+						<Stat n="2" label="Independent storage backends" />
+						<Stat n="1" label="Purpose (finally)" />
+						<Stat n="∅" label="Bytes modified in transit" />
 					</div>
 				</div>
 			</div>
@@ -1385,23 +1394,28 @@ function Stat({ n, label }: { n: string; label: string }) {
 	);
 }
 
-function Marquee({ accent, isMobile = false }: { accent: string; isMobile?: boolean }) {
+function Marquee({
+	accent,
+	isMobile = false,
+}: {
+	accent: string;
+	isMobile?: boolean;
+}) {
 	const words = [
-		"nichts",
-		"rien",
-		"無",
-		"нічого",
-		"niente",
-		"ingenting",
-		"لا شيء",
-		"kosong",
-		"ਕੁਝ ਨਹੀਂ",
-		"ʻaʻohe",
-		"nada",
-		"nichego",
-		"inget",
-		"mitään",
-		"tidak ada",
+		"8K",
+		"360°",
+		"stereoscopic",
+		"206",
+		"range: bytes=0-",
+		"180°",
+		"edge-cached",
+		"H.265",
+		"AV1",
+		"no buffering",
+		"multi-gig",
+		"60 fps",
+		"SBS",
+		"TLS",
 	];
 	const row = [...words, ...words, ...words];
 	return (
@@ -1423,16 +1437,15 @@ function Marquee({ accent, isMobile = false }: { accent: string; isMobile?: bool
 					display: "inline-flex",
 					gap: isMobile ? 32 : 48,
 					animation: "noneScroll 40s linear infinite",
-					fontSize: isMobile ? "clamp(32px, 12vw, 56px)" : "clamp(48px, 8vw, 120px)",
+					fontSize: isMobile
+						? "clamp(32px, 12vw, 56px)"
+						: "clamp(48px, 8vw, 120px)",
 					fontWeight: 300,
 					letterSpacing: "-0.03em",
 				}}
 			>
 				{row.map((w, i) => (
-					<span
-						key={i}
-						style={{ color: i % 4 === 0 ? accent : "var(--fg)" }}
-					>
+					<span key={i} style={{ color: i % 4 === 0 ? accent : "var(--fg)" }}>
 						{w}
 					</span>
 				))}
@@ -1442,561 +1455,154 @@ function Marquee({ accent, isMobile = false }: { accent: string; isMobile?: bool
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// REVIEWS — testimonials from no one
+// 05 CONTACT — real this time. Messages no longer go into a void.
 // ─────────────────────────────────────────────────────────────────────
-function Reviews({ accent, isMobile = false }: { accent: string; isMobile?: boolean }) {
-	const reviews = [
-		{
-			body: "I expected nothing and that's exactly what I got. 0/5, would not recommend, but also would not not recommend.",
-			name: "— Anonymous",
-			meta: "Verified Non-Buyer",
-		},
-		{
-			body: "My wife and I ordered one (1) nothing for our anniversary. It arrived in a beautifully empty box. We have been staring at it for three weeks.",
-			name: "— H.",
-			meta: "Repeat Non-Customer",
-		},
-		{
-			body: "Initially I was disappointed by the lack of features. Then I realized: that IS the feature.",
-			name: "— A reader",
-			meta: "Vermont",
-		},
-		{
-			body: "I tried to leave one star but the form rejected it. I left zero. Best decision of my year so far.",
-			name: "— A passerby",
-			meta: "June",
-		},
-	];
-
-	return (
-		<section
-			id="reviews"
-			data-screen-label="04 Reviews"
-			style={{
-				borderTop: "1px solid var(--line)",
-				padding: isMobile ? "48px 16px 64px" : "90px 28px 120px",
-			}}
-		>
-			<SectionHead
-				num="04"
-				title="Reviews"
-				sub="What our zero customers are not saying."
-			/>
-
-			<div
-				style={{
-					display: "grid",
-					gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-					gap: 1,
-					marginTop: 56,
-					background: "var(--line)",
-					border: "1px solid var(--line)",
-				}}
-			>
-				{reviews.map((r, i) => (
-					<div
-						key={i}
-						style={{
-							background: "var(--bg)",
-							padding: 32,
-							display: "flex",
-							flexDirection: "column",
-							minHeight: 280,
-						}}
-					>
-						<div style={{ display: "flex", gap: 4, marginBottom: 18 }}>
-							{[0, 1, 2, 3, 4].map((s) => (
-								<span
-									key={s}
-									style={{ fontSize: 18, color: "var(--line)" }}
-								>
-									★
-								</span>
-							))}
-							<span
-								style={{
-									marginLeft: 8,
-									fontFamily: "var(--mono)",
-									fontSize: 11,
-									color: "var(--muted)",
-								}}
-							>
-								0.0 / 5
-							</span>
-						</div>
-						<p
-							style={{
-								fontSize: 17,
-								lineHeight: 1.5,
-								fontWeight: 400,
-								flex: 1,
-								textWrap: "pretty",
-							}}
-						>
-							"{r.body}"
-						</p>
-						<div
-							style={{
-								marginTop: 20,
-								paddingTop: 16,
-								borderTop: "1px solid var(--line)",
-							}}
-						>
-							<div style={{ fontWeight: 500 }}>{r.name}</div>
-							<div
-								style={{
-									fontFamily: "var(--mono)",
-									fontSize: 11,
-									color: "var(--muted)",
-									marginTop: 2,
-								}}
-							>
-								{r.meta}
-							</div>
-						</div>
-					</div>
-				))}
-			</div>
-
-			<div
-				style={{
-					marginTop: 32,
-					fontFamily: "var(--mono)",
-					fontSize: 11,
-					color: "var(--muted)",
-					textAlign: "center",
-					letterSpacing: "0.04em",
-				}}
-			>
-				Showing 4 of 0 reviews.{" "}
-				<span
-					style={{
-						color: accent,
-						cursor: "pointer",
-						textDecoration: "underline",
-					}}
-				>
-					Load fewer →
-				</span>
-			</div>
-		</section>
-	);
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// SEARCH that returns nothing
-// ─────────────────────────────────────────────────────────────────────
-function SearchVoid({ accent, isMobile = false }: { accent: string; isMobile?: boolean }) {
-	const [q, setQ] = useState("");
-	const [submitted, setSubmitted] = useState(false);
-
-	useEffect(() => {
-		if (submitted) {
-			const t = setTimeout(() => setSubmitted(false), 4000);
-			return () => clearTimeout(t);
-		}
-	}, [submitted]);
-
-	return (
-		<section
-			data-screen-label="05 Search"
-			style={{
-				borderTop: "1px solid var(--line)",
-				padding: isMobile ? "60px 16px" : "120px 28px",
-				textAlign: "center",
-				background: "var(--fg)",
-				color: "var(--bg)",
-			}}
-		>
-			<div
-				style={{
-					fontFamily: "var(--mono)",
-					fontSize: 11,
-					letterSpacing: "0.12em",
-					opacity: 0.5,
-					textTransform: "uppercase",
-				}}
-			>
-				05 — Try our search
-			</div>
-			<h2
-				style={{
-					fontSize: "clamp(36px, 5vw, 72px)",
-					fontWeight: 300,
-					letterSpacing: "-0.03em",
-					margin: "24px auto 40px",
-					maxWidth: 800,
-					lineHeight: 1.1,
-				}}
-			>
-				Search for anything. We won't find it.
-			</h2>
-			<form
-				onSubmit={(e) => {
-					e.preventDefault();
-					setSubmitted(true);
-				}}
-				style={{
-					maxWidth: 600,
-					margin: "0 auto",
-					display: "flex",
-					borderBottom: `1px solid ${accent}`,
-					paddingBottom: 8,
-				}}
-			>
-				<input
-					value={q}
-					onChange={(e) => setQ(e.target.value)}
-					placeholder="e.g. meaning, purpose, that one thing…"
-					style={{
-						flex: 1,
-						background: "transparent",
-						border: "none",
-						outline: "none",
-						color: "var(--bg)",
-						fontFamily: "var(--sans)",
-						fontSize: 20,
-						padding: "12px 0",
-					}}
-				/>
-				<button
-					type="submit"
-					style={{
-						background: "transparent",
-						border: "none",
-						color: accent,
-						fontFamily: "var(--mono)",
-						fontSize: 12,
-						letterSpacing: "0.12em",
-						cursor: "pointer",
-						textTransform: "uppercase",
-					}}
-				>
-					search →
-				</button>
-			</form>
-			<div
-				style={{
-					marginTop: 32,
-					minHeight: 60,
-					fontFamily: "var(--mono)",
-					fontSize: 13,
-					opacity: 0.7,
-				}}
-			>
-				{submitted ? (
-					<div style={{ animation: "fadeIn 0.4s ease" }}>
-						<div>No results for "{q || "nothing"}".</div>
-						<div style={{ marginTop: 6, opacity: 0.6 }}>
-							(Working as intended.)
-						</div>
-					</div>
-				) : (
-					<div style={{ opacity: 0.4 }}>Awaiting your query.</div>
-				)}
-			</div>
-		</section>
-	);
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// CONTACT — messages sent here go into the actual void (no DB)
-// ─────────────────────────────────────────────────────────────────────
-function Contact({ accent, isMobile = false }: { accent: string; isMobile?: boolean }) {
-	const fetcher = useFetcher();
-	const isSending = fetcher.state === "submitting";
-	const isSuccess = fetcher.data?.success;
-
+function Contact({
+	accent,
+	isMobile = false,
+}: {
+	accent: string;
+	isMobile?: boolean;
+}) {
 	return (
 		<section id="contact" className="section" data-screen-label="06 Contact">
 			<SectionHead
-				num="06"
-				title="Contact"
-				sub="Messages sent here go to a void we maintain at 4° below room temperature."
+				num="05"
+				title="Get on the list"
+				sub="No signup form, no dashboard, no credit card field. Onboarding is a conversation."
 			/>
 
-			<fetcher.Form
-				method="post"
+			<div
 				style={{
-					maxWidth: 720,
 					marginTop: isMobile ? 32 : 56,
 					display: "grid",
-					gap: isMobile ? 24 : 32,
+					gridTemplateColumns: isMobile ? "1fr" : "repeat(12, 1fr)",
+					gap: isMobile ? 32 : 24,
 				}}
 			>
-				<input type="hidden" name="intent" value="contact" />
-
-				<div>
-					<label className="field-label">Your name (optional)</label>
-					<input
-						name="name"
-						placeholder="Or no name. Whatever feels right."
-						className="field-input"
-					/>
+				<div
+					style={{
+						gridColumn: isMobile ? "auto" : "span 6",
+						fontSize: isMobile ? 15 : 16,
+						lineHeight: 1.55,
+					}}
+				>
+					<p style={{ marginBottom: 18 }}>
+						nnole is invite-only. We take on a small number of clients so the
+						network stays fast for all of them. If you're serving{" "}
+						<em
+							style={{
+								fontStyle: "normal",
+								borderBottom: `2px solid ${accent}`,
+							}}
+						>
+							large video to real viewers
+						</em>{" "}
+						— VR especially — write to us.
+					</p>
+					<p style={{ color: "var(--muted)" }}>
+						Tell us roughly what you're serving: formats, typical file sizes,
+						where your viewers are, and how much traffic you expect. You'll get
+						a reply from a human who runs the network, not a ticket number.
+					</p>
 				</div>
 
-				<div>
-					<label className="field-label">Your email (we won't use it)</label>
-					<input
-						name="email"
-						type="email"
-						placeholder="you@somewhere.com"
-						className="field-input"
-					/>
-				</div>
+				<div style={{ gridColumn: isMobile ? "auto" : "span 6" }}>
+					<div style={{ border: "1px solid var(--line)" }}>
+						<div
+							style={{
+								padding: "14px 20px",
+								borderBottom: "1px solid var(--line)",
+								fontFamily: "var(--mono)",
+								fontSize: 11,
+								letterSpacing: "0.1em",
+								color: "var(--muted)",
+								textTransform: "uppercase",
+							}}
+						>
+							The entire onboarding process
+						</div>
+						{[
+							["01", "You email us", CONTACT_EMAIL],
+							["02", "We talk", "about your content and traffic"],
+							["03", "You upload", "we hand you delivery URLs"],
+							["04", "That's it", "your viewers press play"],
+						].map(([n, t, s], i) => (
+							<div
+								key={n}
+								style={{
+									display: "flex",
+									alignItems: "baseline",
+									gap: 16,
+									padding: "16px 20px",
+									borderBottom: i === 3 ? "none" : "1px solid var(--line)",
+								}}
+							>
+								<span
+									className="mono"
+									style={{ fontSize: 11, color: accent }}
+								>
+									{n}
+								</span>
+								<span style={{ fontSize: 17, fontWeight: 500 }}>{t}</span>
+								<span
+									className="mono"
+									style={{
+										fontSize: 12,
+										color: "var(--muted)",
+										marginLeft: "auto",
+										textAlign: "right",
+									}}
+								>
+									{s}
+								</span>
+							</div>
+						))}
+					</div>
 
-				<div>
-					<label className="field-label">What's on your mind?</label>
-					<textarea
-						name="body"
-						placeholder="Type anything. Or don't."
-						className="field-input field-textarea"
-						rows={5}
-						required
-					/>
-				</div>
-
-				<div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-					<button
-						type="submit"
-						disabled={isSending}
+					<a
+						href={`mailto:${CONTACT_EMAIL}?subject=Delivery%20inquiry`}
 						className="btn btn-accent"
-						style={{ minWidth: 220 }}
-					>
-						{isSending
-							? "Sending into the void…"
-							: isSuccess
-								? "∅ Received (and ignored)"
-								: "Send into the void →"}
-					</button>
-					<span className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>
-						We respond within 0–∞ business days.
-					</span>
-				</div>
-
-				{isSuccess && (
-					<div style={{ color: "var(--muted)", fontSize: 14 }}>
-						Thank you. Your message has been successfully lost.
-					</div>
-				)}
-			</fetcher.Form>
-		</section>
-	);
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// CAREERS — open positions for no one
-// ─────────────────────────────────────────────────────────────────────
-function Careers({ isMobile = false }: { isMobile?: boolean }) {
-	const roles = [
-		{
-			title: "Senior Doer of Nothing",
-			team: "Operations",
-			loc: "Remote / Anywhere / Nowhere",
-			type: "Full-time",
-		},
-		{
-			title: "Head of Inactivity",
-			team: "Leadership",
-			loc: "Unspecified",
-			type: "Part-time",
-		},
-		{
-			title: "Engineer — Empty Systems",
-			team: "Platform",
-			loc: "Distributed",
-			type: "Contract",
-		},
-		{
-			title: "Designer of Absence",
-			team: "Brand",
-			loc: "∅",
-			type: "Full-time",
-		},
-	];
-	return (
-		<section
-			id="careers"
-			data-screen-label="07 Careers"
-			style={{
-				borderTop: "1px solid var(--line)",
-				padding: isMobile ? "48px 16px 64px" : "90px 28px 120px",
-			}}
-		>
-			<SectionHead
-				num="07"
-				title="Careers"
-				sub="We have 0 openings. Apply anyway."
-			/>
-
-			<div style={{ marginTop: 56, border: "1px solid var(--line)" }}>
-				{roles.map((r, i) => (
-					<Role key={i} {...r} last={i === roles.length - 1} isMobile={isMobile} />
-				))}
-			</div>
-		</section>
-	);
-}
-
-function Role({
-	title,
-	team,
-	loc,
-	type,
-	last,
-	isMobile = false,
-}: {
-	title: string;
-	team: string;
-	loc: string;
-	type: string;
-	last: boolean;
-	isMobile?: boolean;
-}) {
-	const [open, setOpen] = useState(false);
-
-	// Mobile: stacked title + meta row
-	if (isMobile) {
-		return (
-			<div style={{ borderBottom: last ? "none" : "1px solid var(--line)" }}>
-				<button
-					type="button"
-					onClick={() => setOpen(!open)}
-					style={{
-						width: "100%",
-						background: "transparent",
-						border: "none",
-						cursor: "pointer",
-						padding: "16px",
-						display: "flex",
-						flexDirection: "column",
-						alignItems: "flex-start",
-						gap: 6,
-						textAlign: "left",
-						color: "inherit",
-						position: "relative",
-					}}
-				>
-					<div style={{ fontSize: 16, fontWeight: 500, paddingRight: 30 }}>{title}</div>
-					<div style={{ display: "flex", flexWrap: "wrap", gap: "6px 12px", fontSize: 12, color: "var(--muted)", fontFamily: "var(--mono)" }}>
-						<span>{team}</span>
-						<span style={{ opacity: 0.35 }}>·</span>
-						<span>{loc}</span>
-						<span style={{ opacity: 0.35 }}>·</span>
-						<span>{type}</span>
-					</div>
-					<div
 						style={{
-							position: "absolute",
-							right: 16,
-							top: 18,
-							transform: open ? "rotate(90deg)" : "rotate(0)",
-							transition: "transform 0.2s",
-							fontSize: 18,
-							opacity: 0.55,
+							display: "inline-block",
+							marginTop: 24,
+							textAlign: "center",
 						}}
 					>
-						→
-					</div>
-				</button>
-				{open && (
+						{CONTACT_EMAIL} →
+					</a>
 					<div
 						style={{
-							padding: "0 16px 18px",
+							marginTop: 14,
+							fontFamily: "var(--mono)",
+							fontSize: 11,
 							color: "var(--muted)",
-							fontSize: 14,
-							lineHeight: 1.5,
+							letterSpacing: "0.04em",
 						}}
 					>
-						You will be responsible for doing nothing in a structured,
-						deliberate manner. No deliverables, no standups, no all-hands.
-						References from previous voids preferred but not required.
-						Compensation: commensurate with output.{" "}
-						<span style={{ color: "var(--fg)" }}>
-							Apply by sending nothing through the contact form.
-						</span>
+						We respond within a business day. A real one — the old "0–∞
+						business days" policy has been retired.
 					</div>
-				)}
+				</div>
 			</div>
-		);
-	}
-
-	// Desktop grid row
-	return (
-		<div style={{ borderBottom: last ? "none" : "1px solid var(--line)" }}>
-			<button
-				type="button"
-				onClick={() => setOpen(!open)}
-				style={{
-					width: "100%",
-					background: "transparent",
-					border: "none",
-					cursor: "pointer",
-					padding: "20px 24px",
-					display: "grid",
-					gridTemplateColumns: "1fr 160px 200px 90px 30px",
-					alignItems: "center",
-					gap: 16,
-					textAlign: "left",
-					color: "inherit",
-				}}
-			>
-				<div style={{ fontSize: 18, fontWeight: 500 }}>{title}</div>
-				<div
-					className="mono"
-					style={{ fontSize: 12, color: "var(--muted)" }}
-				>
-					{team}
-				</div>
-				<div
-					className="mono"
-					style={{ fontSize: 12, color: "var(--muted)" }}
-				>
-					{loc}
-				</div>
-				<div
-					className="mono"
-					style={{ fontSize: 12, color: "var(--muted)" }}
-				>
-					{type}
-				</div>
-				<div
-					style={{
-						transform: open ? "rotate(90deg)" : "rotate(0)",
-						transition: "transform 0.2s",
-						fontSize: 18,
-					}}
-				>
-					→
-				</div>
-			</button>
-			{open && (
-				<div
-					style={{
-						padding: "0 24px 24px",
-						maxWidth: 720,
-						color: "var(--muted)",
-						fontSize: 15,
-						lineHeight: 1.6,
-					}}
-				>
-					You will be responsible for doing nothing in a structured,
-					deliberate manner. No deliverables, no standups, no all-hands.
-					References from previous voids preferred but not required.
-					Compensation: commensurate with output.{" "}
-					<span style={{ color: "var(--fg)" }}>
-						Apply by sending nothing through the contact form.
-					</span>
-				</div>
-			)}
-		</div>
+		</section>
 	);
 }
 
 // ─────────────────────────────────────────────────────────────────────
 // FOOTER
 // ─────────────────────────────────────────────────────────────────────
-function Footer({ accent, mounted, isMobile = false }: { accent: string; mounted: boolean; isMobile?: boolean }) {
+function Footer({
+	accent,
+	mounted,
+	isMobile = false,
+	edge,
+}: {
+	accent: string;
+	mounted: boolean;
+	isMobile?: boolean;
+	edge: EdgeState;
+}) {
 	const [time, setTime] = useState<Date | null>(null);
 
 	useEffect(() => {
@@ -2042,41 +1648,41 @@ function Footer({ accent, mounted, isMobile = false }: { accent: string; mounted
 				<div>
 					<div style={{ opacity: 0.5, marginBottom: 10 }}>SITEMAP</div>
 					<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-						<span>↳ /</span>
-						<span style={{ opacity: 0.3 }}>↳ /nothing</span>
-						<span style={{ opacity: 0.3 }}>↳ /nothing/here</span>
-						<span style={{ opacity: 0.3 }}>↳ /nothing/here/either</span>
+						<a href="#delivery">↳ /delivery</a>
+						<a href="#vr">↳ /vr</a>
+						<a href="#status">↳ /status</a>
+						<a href="#contact">↳ /contact</a>
 					</div>
 				</div>
 				<div>
-					<div style={{ opacity: 0.5, marginBottom: 10 }}>SOCIAL</div>
+					<div style={{ opacity: 0.5, marginBottom: 10 }}>NETWORK</div>
 					<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-						<span>@nnole (not on twitter)</span>
-						<span>@nnole (not on instagram)</span>
-						<span>@nnole (not on tiktok)</span>
-						<span>@nnole (not on bluesky)</span>
-					</div>
-				</div>
-				<div>
-					<div style={{ opacity: 0.5, marginBottom: 10 }}>LEGAL</div>
-					<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-						<span>Terms (none)</span>
-						<span>Privacy (we collect none)</span>
-						<span>Cookies (none, sorry)</span>
-						<span>Refunds (no)</span>
-					</div>
-				</div>
-				<div>
-					<div style={{ opacity: 0.5, marginBottom: 10 }}>STATUS</div>
-					<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-						<span style={{ color: accent }}>● All systems doing nothing</span>
-						<span>Uptime: 100% (of available nothing)</span>
+						<span style={{ color: accent }}>● All systems operational</span>
+						<span suppressHydrationWarning>
+							Your edge: {mounted && edge.colo ? edge.colo : "---"}
+						</span>
 						<span suppressHydrationWarning>
 							Local time:{" "}
 							{mounted && time
 								? time.toLocaleTimeString([], { hour12: false })
 								: "--:--:--"}
 						</span>
+					</div>
+				</div>
+				<div>
+					<div style={{ opacity: 0.5, marginBottom: 10 }}>CONTACT</div>
+					<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+						<a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+						<span style={{ opacity: 0.5 }}>invite-only · by conversation</span>
+						<span style={{ opacity: 0.5 }}>abuse: same address</span>
+					</div>
+				</div>
+				<div>
+					<div style={{ opacity: 0.5, marginBottom: 10 }}>LEGAL</div>
+					<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+						<span>Terms — by arrangement</span>
+						<span>Privacy — we log traffic, not people</span>
+						<span>Cookies — still none</span>
 					</div>
 				</div>
 			</div>
@@ -2094,11 +1700,9 @@ function Footer({ accent, mounted, isMobile = false }: { accent: string; mounted
 					opacity: 0.5,
 				}}
 			>
-				<div>© {year} NNOLE INC. Patented nothing.</div>
-				<div>
-					Bought out of boredom · spells ELONN backwards · no refunds
-				</div>
-				<div>v0.0.0</div>
+				<div>© {year} nnole — content delivery.</div>
+				<div>Formerly a website about nothing · the pivot was accidental</div>
+				<div>v1.0.0</div>
 			</div>
 		</footer>
 	);
@@ -2295,130 +1899,6 @@ function ControlsPanel({
 				>
 					{cursorOn ? "ON" : "OFF"}
 				</button>
-			</div>
-		</div>
-	);
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// FAKE CHECKOUT — beautifully pointless
-// ─────────────────────────────────────────────────────────────────────
-function CheckoutModal({
-	open,
-	onClose,
-	accent,
-	onComplete,
-}: {
-	open: boolean;
-	onClose: () => void;
-	accent: string;
-	onComplete: () => void;
-}) {
-	const [step, setStep] = useState<"review" | "details" | "processing" | "done">("review");
-
-	if (!open) return null;
-
-	const handleNext = () => {
-		if (step === "review") setStep("details");
-		else if (step === "details") {
-			setStep("processing");
-			setTimeout(() => setStep("done"), 1350);
-		} else if (step === "done") {
-			onComplete();
-			setStep("review");
-		}
-	};
-
-	return (
-		<div
-			style={{
-				position: "fixed",
-				inset: 0,
-				background: "rgba(0,0,0,0.6)",
-				zIndex: 200,
-				display: "flex",
-				alignItems: "center",
-				justifyContent: "center",
-				padding: 20,
-			}}
-			onClick={onClose}
-		>
-			<div
-				style={{
-					background: "var(--bg)",
-					color: "var(--fg)",
-					border: "1px solid var(--line)",
-					width: "100%",
-					maxWidth: 520,
-					padding: 32,
-				}}
-				onClick={(e) => e.stopPropagation()}
-			>
-				<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-					<div className="mono" style={{ fontSize: 12, color: "var(--muted)" }}>
-						CHECKOUT / STEP {step === "review" ? "1" : step === "details" ? "2" : step === "processing" ? "3" : "4"}
-					</div>
-					<button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", lineHeight: 1 }}>×</button>
-				</div>
-
-				{step === "review" && (
-					<>
-						<h3 style={{ fontSize: 28, margin: "0 0 8px" }}>Review your nothing</h3>
-						<p style={{ color: "var(--muted)", marginBottom: 24 }}>
-							You are about to purchase 1 (one) unit of nothing.
-						</p>
-						<div style={{ border: "1px solid var(--line)", padding: 20, marginBottom: 24 }}>
-							<div>1 × Nothing (any variety)</div>
-							<div style={{ color: "var(--muted)", marginTop: 4 }}>$0.00</div>
-						</div>
-					</>
-				)}
-
-				{step === "details" && (
-					<>
-						<h3 style={{ fontSize: 28, margin: "0 0 8px" }}>Your details (optional)</h3>
-						<p style={{ color: "var(--muted)", marginBottom: 16 }}>
-							We don't actually need any of this.
-						</p>
-						<input placeholder="Full name" className="field-input" style={{ marginBottom: 12 }} />
-						<input placeholder="Email" className="field-input" style={{ marginBottom: 24 }} />
-					</>
-				)}
-
-				{step === "processing" && (
-					<div style={{ textAlign: "center", padding: "40px 20px" }}>
-						<div style={{ fontSize: 48, marginBottom: 12 }}>∅</div>
-						<div>Processing your order of nothing...</div>
-					</div>
-				)}
-
-				{step === "done" && (
-					<div style={{ textAlign: "center", padding: "20px 0" }}>
-						<div style={{ fontSize: 48, marginBottom: 12 }}>✓</div>
-						<h3 style={{ marginBottom: 8 }}>Order placed.</h3>
-						<p style={{ color: "var(--muted)" }}>
-							Your nothing will arrive in 3–5 business eternities.<br />
-							Order #000000
-						</p>
-					</div>
-				)}
-
-				<div style={{ display: "flex", gap: 12, marginTop: 24 }}>
-					<button className="btn" onClick={onClose} style={{ flex: 1 }}>
-						Cancel
-					</button>
-					<button
-						className="btn btn-accent"
-						onClick={handleNext}
-						style={{ flex: 1 }}
-						disabled={step === "processing"}
-					>
-						{step === "review" && "Continue"}
-						{step === "details" && "Place order"}
-						{step === "processing" && "Processing…"}
-						{step === "done" && "Close"}
-					</button>
-				</div>
 			</div>
 		</div>
 	);
